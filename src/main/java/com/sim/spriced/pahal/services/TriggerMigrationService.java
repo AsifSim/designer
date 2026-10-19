@@ -31,8 +31,7 @@ public class TriggerMigrationService {
     private final ChatClient chatClient;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    // ALL 31 TRIGGERS.
-    // Because we clean the ProcessorController completely now, PVC_ACTION is safely included without duplication.
+    // ALL 31 TRIGGERS
     private static final List<TriggerMapping> TRIGGER_DEFINITIONS = List.of(
             new TriggerMapping("PART_ENTITY_CHANGE", "PartEntityProcessor.java", "part_entity_change", "part_entity"),
             new TriggerMapping("DNPRICING_CHANGE", "DNPricingEntityProcessor.java", "dnpricing_change", "dnpricing"),
@@ -107,7 +106,7 @@ public class TriggerMigrationService {
 
                 Files.createDirectories(serviceImplDir);
 
-                // Overwrite the controller to start fully clean (Fixes duplicate endpoints & wildcards)
+                // Overwrite the controller to start fully clean
                 Files.writeString(controllerFile, getCleanControllerBase(), StandardCharsets.UTF_8);
 
                 String refServiceCode = getReferenceService();
@@ -136,10 +135,14 @@ public class TriggerMigrationService {
                     try {
                         JsonNode root = objectMapper.readTree(aiResponseJson);
 
-                        // Extract DB tool verification from LLM
+                        // Extract DB tool verification from LLM and explicitly log it to UI
                         String analyzedTable = root.path("analyzedTable").asText("Unknown");
-                        sendSse(emitter, "DB_TOOL", "LLM validated and fetched DB schema for: " + analyzedTable);
-                        logger.info("LLM reported fetching schema for table: {}", analyzedTable);
+                        if (!"Unknown".equals(analyzedTable)) {
+                            sendSse(emitter, "DB_TOOL", "SUCCESS: LLM executed getTableSchema for DB table [" + analyzedTable + "]");
+                            logger.info("LLM reported fetching schema for table: {}", analyzedTable);
+                        } else {
+                            sendSse(emitter, "WARN", "LLM bypassed the DB Table schema tool for this trigger.");
+                        }
 
                         // 1. Process Java Code
                         String serviceClassName = root.path("serviceClassName").asText();
@@ -173,7 +176,7 @@ public class TriggerMigrationService {
 
                         sendSse(emitter, "SUCCESS", "Generated REST endpoint and JSON Configs for " + mapping.triggerName());
                     } catch (Exception ex) {
-                        sendSse(emitter, "ERROR", "Failed to parse AI response for " + mapping.triggerName());
+                        sendSse(emitter, "ERROR", "Failed to parse AI response for " + mapping.triggerName() + ". Error: " + ex.getMessage());
                         logger.error("AI Generation error for {}: response={}", mapping.triggerName(), aiResponseJson, ex);
                     }
                 }
@@ -206,14 +209,13 @@ public class TriggerMigrationService {
 
         String fullPromptText = systemPrompt + "\n\n" + enrichedMessage.toString();
 
-        // Log exactly what is being sent to the LLM to the Spring Boot Console
         logger.info("\n\n======================================================================\n");
         logger.info("DISPATCHING FINAL PROMPT TO LLM FOR: {}", mapping.triggerName());
         logger.info("\n{}\n", fullPromptText);
         logger.info("======================================================================\n\n");
 
-        // Notify the UI
-        sendSse(emitter, "PROMPT", "Sent enriched prompt for " + mapping.triggerName() + " to LLM (Check Spring console for full payload)");
+        // Push the entire prompt to the UI so the user can see all the data being sent
+        sendSse(emitter, "PROMPT", "PROMPT SENT TO LLM:\n----------------------------------------\n" + fullPromptText + "\n----------------------------------------");
 
         String aiResponse = chatClient.prompt()
                 .system(systemPrompt)
@@ -222,7 +224,17 @@ public class TriggerMigrationService {
                 .call()
                 .content();
 
-        return aiResponse.replaceAll("^```json\\s*", "").replaceAll("^```\\s*", "").replaceAll("\\s*```$", "").trim();
+        logger.info("\n\nRAW LLM RESPONSE FOR {}:\n{}\n\n", mapping.triggerName(), aiResponse);
+
+        // BULLETPROOF JSON EXTRACTION
+        int startIndex = aiResponse.indexOf('{');
+        int endIndex = aiResponse.lastIndexOf('}');
+
+        if (startIndex != -1 && endIndex != -1 && startIndex <= endIndex) {
+            return aiResponse.substring(startIndex, endIndex + 1);
+        }
+
+        return aiResponse;
     }
 
     private String buildSystemPrompt(String refService, String refController) {
@@ -233,30 +245,23 @@ public class TriggerMigrationService {
                - Extract @Autowired dependencies and logic inside `createSubTopology()`.
                - Output a strictly typed Spring @Service matching the Reference Service below.
                
-            2. DOWNSTREAM CASCADING RULE (CRITICAL FIX):
-               If the original processor invokes a downstream sub-processor (e.g., `localPartPricingEntitySubProcessor.createTopology(...)`), you MUST replace this with the newly generated REST Process Service.
-               - NEVER autowire `*SubProcessor` or `*Processor` Kafka classes.
-               - ALWAYS change it to the new `*ProcessService` class.
-               - Example: Replace `LocalPartPricingEntitySubProcessor` with `LocalPartPricingChangeProcessService` and call its `.process(...)` method.
-               - Example: Replace `DNPricingEnrichmentSubProcessor` with `DNPricingEnrichmentProcessService`.
+            2. DOWNSTREAM CASCADING RULE:
+               If the original processor invokes a downstream sub-processor, replace it with the new `*ProcessService` equivalent (e.g., `LocalPartPricingChangeProcessService.process(...)`). NEVER autowire Kafka classes.
                
-            3. DEAM JSON GENERATION (STRICT CREATION STEPS):
-               - MANDATORY: Use the `getTableSchema` tool to fetch actual DB columns.
-               - "attributesList" MUST be an array of fully detailed JSON Objects. DO NOT output an array of strings.
-               - Every physical attribute MUST contain: "name", "type" (integer/string/datetime/boolean), "displayName", "isVirtual": false.
-               - FOREIGN KEYS: If an attribute is an ID linking to another table (e.g., "paccar_part"), it MUST include "referencedEntity": ["<target_table>"] and "referencedAttribute": ["id"].
-               - VIRTUAL ATTRIBUTES: Immediately after any Foreign Key physical attribute, you MUST append its Virtual counterpart to display the text value. It MUST have "isVirtual": true, "type": "string", and a "virtualConfig" array using the "CONCAT" operator against the target table's "code" and "name".
+            3. DEAM JSON CREATION STEPS (CRITICAL):
+               - RULE 1: MANDATORY to use the `getTableSchema` tool to fetch actual DB columns.
+               - RULE 2: `attributesList` MUST be an array of fully detailed JSON Objects. NEVER output a flat array of strings like `["id", "code"]`.
+               - RULE 3: Standard Attribute format: `{"name": "col", "type": "string", "displayName": "Col", "isVirtual": false}`
+               - RULE 4: Foreign Key (Physical ID): If a column links to another table (e.g., `target_id` linking to `x_target_table`), you MUST include `"referencedEntity": ["x_target_table"]` and `"referencedAttribute": ["id"]`.
+               - RULE 5: Foreign Key (Virtual Ref): Immediately after the Physical ID, create a Virtual Attribute to hold the text representation (e.g., `target_id_ref`) with `"isVirtual": true`, `"type": "string"`, and `"virtualConfig": [{"operator": "CONCAT", "entity": "x_target_table", "attribute": "code"}]`.
+               - RULE 6: Include a `deamReads` array with a standard `fetchIdFromCode` filter.
 
-            4. WORKFLOW WFM JSON GENERATION (STRICT CREATION STEPS):
-               - "workflowName" MUST be the Trigger Name.
-               - "subWorkflowExecution" MUST contain a complete "ttm" (Transformation & Translation Map) block.
-               - "ttm.payload.sourceMetadata": Array of objects mapping incoming names to "dataType".
-               - "ttm.payload.targetMetadata": Array of objects mapping source fields to DEAM fields using "mapTo".
-               - FOREIGN KEY LOOKUPS: To convert incoming text codes to DB IDs, you MUST use a chained transformation:
-                 Step 1: "operation": "REGEX_REMOVE" to clean the UI string.
-                 Step 2: "operation": "DEAM_READ" to fetch the ID from the target entity using the cleaned string.
-               - BUSINESS LOGIC: Migrate Java math to "EXPRESSION" or "SUM"/"MULTIPLY" operations in TTM.
-               - Must include "crud": {"operation": "upsert"}.
+            4. WORKFLOW WFM CREATION STEPS (CRITICAL):
+               - RULE 1: `subWorkflowExecution` MUST contain a complete `ttm` block. NEVER leave it empty `[]`.
+               - RULE 2: `ttm.payload.sourceMetadata` must list incoming fields, e.g., `[{"ColumnName": {"dataType": "string"}}]`.
+               - RULE 3: `ttm.payload.targetMetadata` must map to DEAM, e.g., `{"mapTo": ["db_col"], "dataType": "string", "attributes": ["ColumnName"]}`.
+               - RULE 4: Foreign Key Lookups (DEAM_READ): If mapping a string code to a DB ID, use `transformations` inside `targetMetadata`:
+                 `"transformations": { "operations": [ { "step": "1", "operation": "DEAM_READ", "entityName": "target_table", "attributeList": [{"sourceAttribute": "StringCode", "targetAttribute": "code"}], "fetchAttributes": [{"sourceField": "id", "output": "db_col_id"}] } ] }`
 
             REFERENCE PATTERNS:
             Service Reference:
@@ -269,29 +274,48 @@ public class TriggerMigrationService {
             %s
             ```
             
-            OUTPUT FORMAT (JSON ONLY):
-            Reply STRICTLY with a JSON object. NO Markdown, NO backticks.
+            OUTPUT FORMAT (STRICT JSON ONLY):
+            Reply with ONLY the following JSON structure filled with the generated data. NO Markdown, NO conversational text.
             {
               "analyzedTable": "name_of_the_table_fetched_via_tool",
               "serviceClassName": "e.g., DnpricingChangeProcessService",
               "serviceClassCode": "Full Java source code of the service",
-              "controllerAutowiredField": "e.g., @Autowired private DnpricingChangeProcessService dnpricingChangeProcessService;",
+              "controllerAutowiredField": "@Autowired private DnpricingChangeProcessService dnpricingChangeProcessService;",
               "controllerMethodCode": "Full Java method code for the controller endpoint",
               "deams": [
                   { 
                       "entity": "table_name", 
+                      "deamReads": [
+                          { "filter": { "where": [ {"operator": "=", "attributeName": "code"} ], "attributeNames": ["id"] }, "filterName": "fetchIdFromCode" }
+                      ],
                       "attributesList": [
                           { "name": "id", "type": "integer", "displayName": "ID", "isVirtual": false },
-                          { "name": "fk_id", "type": "integer", "referencedEntity": ["target_table"], "referencedAttribute": ["id"] },
-                          { "name": "fk_ref", "type": "string", "isVirtual": true, "virtualConfig": [{"operator": "CONCAT", "entity": "target_table", "attribute": "code"}] }
+                          { "name": "target_id", "type": "integer", "displayName": "Target ID", "isVirtual": false, "referencedEntity": ["target_table"], "referencedAttribute": ["id"] },
+                          { "name": "target_id_ref", "type": "string", "displayName": "Target Ref", "isVirtual": true, "virtualConfig": [{"operator": "CONCAT", "entity": "target_table", "attribute": "code"}], "referencedEntity": ["target_table"], "referencedAttribute": ["code_name"] }
                       ] 
                   }
               ],
               "workflow": {
-                  "workflowName": "workflow_name",
+                  "workflowName": "TRIGGER_NAME_HERE",
                   "subWorkflowExecution": [
                       { 
-                         "ttm": { "payload": { "sourceMetadata": [], "targetMetadata": [] } }, 
+                         "ttm": { 
+                             "payload": { 
+                                 "sourceMetadata": [ { "IncomingCode": { "dataType": "string" } } ], 
+                                 "targetMetadata": [
+                                     {
+                                         "mapTo": ["target_id"],
+                                         "dataType": "integer",
+                                         "attributes": ["IncomingCode"],
+                                         "transformations": {
+                                             "operations": [
+                                                 { "step": "1", "operation": "DEAM_READ", "entityName": "target_table", "attributeList": [{"sourceAttribute": "IncomingCode", "targetAttribute": "code"}], "fetchAttributes": [{"sourceField": "id", "output": "target_id"}] }
+                                             ]
+                                         }
+                                     }
+                                 ] 
+                             } 
+                         }, 
                          "sinkType": "GRPC_SINK",
                          "crud": {"operation": "upsert"}
                       }
@@ -431,14 +455,6 @@ public class TriggerMigrationService {
             new ProcessBuilder("git", "checkout", "-b", branchName).directory(repoDir.toFile()).start().waitFor();
         } catch (Exception ex) {
             logger.warn("Git branch execution failed: {}", ex.getMessage());
-        }
-    }
-
-    private String readFileSafely(Path path) {
-        try {
-            return Files.exists(path) ? Files.readString(path, StandardCharsets.UTF_8) : "";
-        } catch (IOException e) {
-            return "";
         }
     }
 
