@@ -33,6 +33,9 @@ public class TriggerMigrationService {
     private final ChatClient chatClient;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
+    // Injecting the native DEAM Generator we built
+    private final DeamGeneratorService deamGeneratorService;
+
     // In-memory registry to hold paused sessions awaiting user input
     private final Map<String, MigrationSessionContext> sessionRegistry = new ConcurrentHashMap<>();
 
@@ -112,7 +115,8 @@ public class TriggerMigrationService {
         public String getTableName() { return tableName; }
     }
 
-    public TriggerMigrationService(ChatClient.Builder builder, ChatMemory chatMemory, PlatformDatabaseTools databaseTools) {
+    public TriggerMigrationService(ChatClient.Builder builder, ChatMemory chatMemory, PlatformDatabaseTools databaseTools, DeamGeneratorService deamGeneratorService) {
+        this.deamGeneratorService = deamGeneratorService;
         this.chatClient = builder
                 .defaultTools(databaseTools)
                 .defaultAdvisors(MessageChatMemoryAdvisor.builder(chatMemory).build())
@@ -242,16 +246,21 @@ public class TriggerMigrationService {
                     ctx.accumulatedAutowiredFields.add(root.path("controllerAutowiredField").asText());
                     ctx.accumulatedControllerMethods.add(root.path("controllerMethodCode").asText());
 
-                    // 2. Process DEAMs
-                    JsonNode deamsNode = root.path("deams");
-                    if (!isSkipped && deamsNode != null && deamsNode.isArray() && !deamsNode.isEmpty()) {
+                    // 2. Process DEAMs using our Native Java Generator
+                    if (!isSkipped) {
                         Path deamsDir = ctx.targetDir.resolve("platform_configs/deams");
                         Files.createDirectories(deamsDir);
-                        for (JsonNode deam : deamsNode) {
-                            String entityName = deam.path("entity").asText(mapping.tableName());
-                            Files.writeString(deamsDir.resolve(entityName + ".json"), deam.toPrettyString(), StandardCharsets.UTF_8);
+                        try {
+                            // Generate, DB Upsert, and return JSON directly via our service
+                            Map<String, String> deamResult = deamGeneratorService.generateAndSaveNewDeam(analyzedTable);
+                            String deamJsonString = deamResult.get("json");
+
+                            Files.writeString(deamsDir.resolve(analyzedTable + ".json"), deamJsonString, StandardCharsets.UTF_8);
+                            sendSse(ctx.emitter, "INFO", "Natively generated DEAM configurations with Virtual Attributes for " + analyzedTable);
+                        } catch (Exception e) {
+                            logger.error("Failed to generate DEAM natively for table: {}", analyzedTable, e);
+                            sendSse(ctx.emitter, "WARN", "Native DEAM generation failed for " + analyzedTable + ": " + e.getMessage());
                         }
-                        sendSse(ctx.emitter, "INFO", "Generated DEAM configurations with Virtual Attributes for " + mapping.tableName());
                     }
 
                     // 3. Process Workflows
@@ -299,7 +308,7 @@ public class TriggerMigrationService {
         String systemPrompt = buildSystemPrompt(refService, refController);
 
         StringBuilder enrichedMessage = new StringBuilder();
-        enrichedMessage.append("Generate the matching REST Service, Controller endpoint, DEAM JSON, and WFM JSON for the following Trigger.\n\n");
+        enrichedMessage.append("Generate the matching REST Service, Controller endpoint, and WFM JSON for the following Trigger.\n\n");
         enrichedMessage.append("Trigger Name: ").append(mapping.triggerName()).append("\n");
         enrichedMessage.append("Target Endpoint: /").append(mapping.endpointPath()).append("\n");
 
@@ -307,7 +316,7 @@ public class TriggerMigrationService {
 
         if ("SKIP".equalsIgnoreCase(userOverrideTableName)) {
             enrichedMessage.append("Database Target Table: NONE. THIS IS A LOGICAL TRIGGER.\n");
-            enrichedMessage.append("CRITICAL OVERRIDE: DO NOT generate any DEAMs or Workflows for this trigger. Leave the 'deams' and 'workflow' JSON arrays completely EMPTY. ONLY generate the Service and Controller.\n\n");
+            enrichedMessage.append("CRITICAL OVERRIDE: DO NOT generate any Workflows for this trigger. Leave the 'workflow' JSON object completely EMPTY. ONLY generate the Service and Controller.\n\n");
         } else if (userOverrideTableName != null && !userOverrideTableName.trim().isEmpty()) {
             targetTable = userOverrideTableName.trim().toLowerCase();
             enrichedMessage.append("Database Target Table: USE THIS EXACT OVERRIDE TABLE NAME FOR TOOLS -> ").append(targetTable).append("\n\n");
@@ -318,6 +327,9 @@ public class TriggerMigrationService {
         enrichedMessage.append("--- UPLOADED FILE CONTEXT ---\n");
         enrichedMessage.append("File Name: ").append(mapping.processorFileName()).append("\n");
         enrichedMessage.append(processorCode).append("\n\n");
+
+        enrichedMessage.append("File Name: EntityConstants.java\n");
+        enrichedMessage.append(getEntityConstantsCode()).append("\n\n");
 
         String fullPromptText = systemPrompt + "\n\n" + enrichedMessage.toString();
 
@@ -351,26 +363,29 @@ public class TriggerMigrationService {
         return """
             You are an expert Spring Boot Architect migrating Kafka Streams to Platform 2.0 REST pipelines.
             
-            1. JAVA SERVICE GENERATION:
-               - Extract @Autowired dependencies and logic inside `createSubTopology()`.
-               - Output a strictly typed Spring @Service matching the Reference Service below.
+1. JAVA SERVICE GENERATION:
+
+- Extract @Autowired dependencies and logic inside `createSubTopology()`.
+
+- Output a strictly typed Spring @Service matching the Reference Service below.
+
                
             2. DOWNSTREAM CASCADING RULE:
                If the original processor invokes a downstream sub-processor, replace it with the new `*ProcessService` equivalent (e.g., `LocalPartPricingChangeProcessService.process(...)`). NEVER autowire Kafka classes.
                
-            3. DEAM JSON CREATION STEPS (CRITICAL):
-               - RULE 1: MANDATORY to use the `getTableSchema` tool to fetch actual DB columns. You MUST pass the table name to the tool in STRICTLY LOWERCASE. If the table is not found, output "schema not found" in the "analyzedTable" field and halt structure generation.
-               - RULE 2: `attributesList` MUST be an array of fully detailed JSON Objects. NEVER output a flat array of strings like `["id", "code"]`.
-               - RULE 3: Standard Attribute format: `{"name": "col", "type": "string", "displayName": "Col", "isVirtual": false}`
-               - RULE 4: Foreign Key (Physical ID): If a column links to another table, you MUST include `"referencedEntity": ["x_target_table"]` and `"referencedAttribute": ["id"]`.
-               - RULE 5: Foreign Key (Virtual Ref): Immediately after the Physical ID, create a Virtual Attribute to hold the text representation with `"isVirtual": true`, `"type": "string"`, and `"virtualConfig": [{"operator": "CONCAT", "entity": "x_target_table", "attribute": "code"}]`.
-               - RULE 6: Include a `deamReads` array with a standard `fetchIdFromCode` filter.
+            3. SCHEMA VALIDATION (CRITICAL):
+- RULE 1: Use `EntityConstants.java` to identify the actual database table name used in the processor code. It is MANDATORY to use the `getTableSchema` tool to fetch actual DB columns. You MUST pass the resolved table name to the tool in STRICTLY LOWERCASE. If the table is not found, output "schema not found" in the "analyzedTable" field and halt structure generation.
+
 
             4. WORKFLOW WFM CREATION STEPS (CRITICAL):
-               - RULE 1: `subWorkflowExecution` MUST contain a complete `ttm` block. NEVER leave it empty `[]`.
-               - RULE 2: `ttm.payload.sourceMetadata` must list incoming fields, e.g., `[{"ColumnName": {"dataType": "string"}}]`.
-               - RULE 3: `ttm.payload.targetMetadata` must map to DEAM, e.g., `{"mapTo": ["db_col"], "dataType": "string", "attributes": ["ColumnName"]}`.
-               - RULE 4: Foreign Key Lookups (DEAM_READ): If mapping a string code to a DB ID, use `transformations` inside `targetMetadata`:
+- RULE 1: `subWorkflowExecution` MUST contain a complete `ttm` block. NEVER leave it empty `[]`.
+
+- RULE 2: `ttm.payload.sourceMetadata` must list incoming fields, e.g., `[{"ColumnName": {"dataType": "string"}}]`.
+
+- RULE 3: `ttm.payload.targetMetadata` must map to DB columns, e.g., `{"mapTo": ["db_col"], "dataType": "string", "attributes": ["ColumnName"]}`.
+
+- RULE 4: Foreign Key Lookups (DEAM_READ): If mapping a string code to a DB ID, use `transformations` inside `targetMetadata`:
+
                  `"transformations": { "operations": [ { "step": "1", "operation": "DEAM_READ", "entityName": "target_table", "attributeList": [{"sourceAttribute": "StringCode", "targetAttribute": "code"}], "fetchAttributes": [{"sourceField": "id", "output": "db_col_id"}] } ] }`
 
             REFERENCE PATTERNS:
@@ -392,19 +407,6 @@ public class TriggerMigrationService {
               "serviceClassCode": "Full Java source code of the service",
               "controllerAutowiredField": "@Autowired private DnpricingChangeProcessService dnpricingChangeProcessService;",
               "controllerMethodCode": "Full Java method code for the controller endpoint",
-              "deams": [
-                  { 
-                      "entity": "table_name", 
-                      "deamReads": [
-                          { "filter": { "where": [ {"operator": "=", "attributeName": "code"} ], "attributeNames": ["id"] }, "filterName": "fetchIdFromCode" }
-                      ],
-                      "attributesList": [
-                          { "name": "id", "type": "integer", "displayName": "ID", "isVirtual": false },
-                          { "name": "target_id", "type": "integer", "displayName": "Target ID", "isVirtual": false, "referencedEntity": ["target_table"], "referencedAttribute": ["id"] },
-                          { "name": "target_id_ref", "type": "string", "displayName": "Target Ref", "isVirtual": true, "virtualConfig": [{"operator": "CONCAT", "entity": "target_table", "attribute": "code"}], "referencedEntity": ["target_table"], "referencedAttribute": ["code_name"] }
-                      ] 
-                  }
-              ],
               "workflow": {
                   "workflowName": "TRIGGER_NAME_HERE",
                   "subWorkflowExecution": [
@@ -433,6 +435,63 @@ public class TriggerMigrationService {
               }
             }
             """.formatted(refService, refController);
+    }
+
+    private String getEntityConstantsCode() {
+        return """
+            package com.cummins.spriced.parts.pricing.constants;
+
+            public class EntityConstants {
+                public static final String PART_ENTITY_NAME = "part";
+                public static final String SEGMENT_ENTITY_NAME = "segment";
+                public static final String PRICE_LIST_RELEASE_ENTITY = "price_list_release";
+                public static final String DN_PRICING_ENTITY_NAME ="dn_pricing";
+
+                public static final String P_PRICING_ACTION_OEM ="p_pricing_action_oem";
+                public static final String PART_PRICE_LIST_END_DATE ="part_price_list_end_date";
+
+                public static final String PVC_ACTION_ENTITY_NAME = "pvc_action";
+                public static final String LOCAL_PART_PRICING = "local_part_pricing";
+                public static final String LOCAL_SEGMENT = "local_segment";
+                public static final String LOCAL_PART_XREF = "local_part_xref";
+                public static final String CHANNEL_PRICING = "channel_pricing";
+                public static final String BASE_PRICE_ENTITY_NAME = "base_price";
+
+                public static final String BASE_FILE_ENTITY_NAME = "p_base_file";
+                public static final String CHANNEL_CODE_ENTITY_NAME = "p_channel_code";
+                public static final String PART_NOUN_NAME_ECC_XREF = "part_noun_name_ecc_xref";
+                public static final String XCPM_ASSIGNAMENT_LOGIC = "xcpm_assignment_logic";
+                public static final String P_PRICING_ACTION = "p_pricing_action";
+                public static final String XPRICING_ACTION_MASTER = "xpricing_action_master";
+                public static final String CHANGE_REASON = "xchange_reason";
+                public static final String CHANGE_REASON_HISTORICAL = "xchange_reason_historical";
+                public static final String CPM = "xcpm";
+                public static final String XCPM_HISTORICAL = "xcpm_historical";
+                public static final String QUOTE = "quote";
+                public static final String QUOTE_DETAIL = "quote_detail";
+                public static final Object PRICE_LIST_DETAIL = "price_list_detail";
+                public static final String NRP_INT_OB_PVC = "nrp_int_ob_pvc";
+                public static final String PVC_ACTION_DETAIL = "p_pvc_action_detail";
+                public static final String PRICE_LIST_RELEASE = "price_list_release";
+                public static final String QUOTE_APPROVAL_HISTORY = "quote_approval_history";
+                public static final String PART_OEM = "part_oem";
+                public static final String CHANNEL_MULTI_GOMS = "p_channel_multiplier_goms";
+                public static final String XUPTIME_PARTS = "xuptime_parts";
+                public static final String CERTIFICATION_LEVEL = "xcertification_level";
+                public static final String SUGGESTED_ENGIN_MODEL ="xcjv_suggested_engine_model";
+                public static final String S_CURRENCY = "s_currency";
+                public static final String P_PRICING_ACTION_DETAIL_ENTITY_NAME = "p_pricing_action_detail";
+                public static final String S_QUOTES_CURRENCY = "s_quotes_currency";
+                public static final String XDN_PRICING_ADDITIONS = "xdn_pricing_additions";
+                public static final String LOCAL_JV_SEGMENT_TYPE_OVERRIDE = "local_jv_segment_type_override";
+                public static final String CES_TRANSFER_PRICING = "ces_dn_pricing";
+                public static final String CES_TP_NEW_PARTS = "ces_tp_new_parts";
+                public static final String CES_EBUPART_XREF_LEAF = "ces_ebupart_xref_leaf";
+                public static final String CES_TRANSFER_HISTORY = "ces_pricing_history_leaf";
+                public static final String CODE = "code";
+
+            }
+            """;
     }
 
     private String getCleanControllerBase() {
