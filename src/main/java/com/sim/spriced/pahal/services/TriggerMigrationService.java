@@ -19,19 +19,23 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 
 @Service
 public class TriggerMigrationService {
 
     private static final Logger logger = LoggerFactory.getLogger(TriggerMigrationService.class);
 
-    @Value("${projects.directory:C:\\Users\\asif.azmi_simadvisor\\Desktop\\Projects}")
+    @Value("${pahal.workspace.base-dir:C:/Users/asif.azmi_simadvisor/Desktop/Projects}")
     private String projectsDirectory;
 
     private final ChatClient chatClient;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    // ALL 31 TRIGGERS
+    // In-memory registry to hold paused sessions awaiting user input
+    private final Map<String, MigrationSessionContext> sessionRegistry = new ConcurrentHashMap<>();
+
     private static final List<TriggerMapping> TRIGGER_DEFINITIONS = List.of(
             new TriggerMapping("PART_ENTITY_CHANGE", "PartEntityProcessor.java", "part_entity_change", "part_entity"),
             new TriggerMapping("DNPRICING_CHANGE", "DNPricingEntityProcessor.java", "dnpricing_change", "dnpricing"),
@@ -68,7 +72,46 @@ public class TriggerMigrationService {
 
     public record TriggerMapping(String triggerName, String processorFileName, String endpointPath, String tableName) {}
 
-    // Injected PlatformDatabaseTools so LLM can fetch actual DB schemas
+    private static class MigrationSessionContext {
+        String sessionId;
+        String sourceProjectName;
+        String newBranchName;
+        SseEmitter emitter;
+        Path targetDir;
+        Path serviceImplDir;
+        Path streamDir;
+        Path controllerFile;
+        List<String> accumulatedControllerMethods;
+        List<String> accumulatedAutowiredFields;
+        int currentIndex;
+
+        MigrationSessionContext(String sessionId, String sourceProjectName, String newBranchName, SseEmitter emitter, Path targetDir, Path serviceImplDir, Path streamDir, Path controllerFile) {
+            this.sessionId = sessionId;
+            this.sourceProjectName = sourceProjectName;
+            this.newBranchName = newBranchName;
+            this.emitter = emitter;
+            this.targetDir = targetDir;
+            this.serviceImplDir = serviceImplDir;
+            this.streamDir = streamDir;
+            this.controllerFile = controllerFile;
+            this.accumulatedControllerMethods = new ArrayList<>();
+            this.accumulatedAutowiredFields = new ArrayList<>();
+            this.currentIndex = 0;
+        }
+    }
+
+    private static class InteractivePromptException extends RuntimeException {
+        private final String triggerName;
+        private final String tableName;
+        InteractivePromptException(String triggerName, String tableName, String message) {
+            super(message);
+            this.triggerName = triggerName;
+            this.tableName = tableName;
+        }
+        public String getTriggerName() { return triggerName; }
+        public String getTableName() { return tableName; }
+    }
+
     public TriggerMigrationService(ChatClient.Builder builder, ChatMemory chatMemory, PlatformDatabaseTools databaseTools) {
         this.chatClient = builder
                 .defaultTools(databaseTools)
@@ -77,17 +120,29 @@ public class TriggerMigrationService {
     }
 
     public List<String> listProjects() {
-        File dir = new File(projectsDirectory);
-        if (!dir.exists() || !dir.isDirectory()) return Collections.emptyList();
-        File[] subdirs = dir.listFiles(File::isDirectory);
-        if (subdirs == null) return Collections.emptyList();
-        return Arrays.stream(subdirs).map(File::getName).toList();
+        try {
+            if (projectsDirectory == null || projectsDirectory.trim().isEmpty()) {
+                logger.warn("projectsDirectory property is null or empty");
+                return Collections.emptyList();
+            }
+            File dir = new File(projectsDirectory);
+            if (!dir.exists() || !dir.isDirectory()) {
+                return Collections.emptyList();
+            }
+            File[] subdirs = dir.listFiles(File::isDirectory);
+            if (subdirs == null) return Collections.emptyList();
+            return Arrays.stream(subdirs).map(File::getName).collect(Collectors.toList());
+        } catch (Exception e) {
+            logger.error("Error reading projects directory: ", e);
+            return Collections.emptyList();
+        }
     }
 
-    public void runMigration(String sourceProjectName, String newBranchName, SseEmitter emitter) {
+    public String runMigration(String sourceProjectName, String newBranchName, SseEmitter emitter) {
+        String sessionId = UUID.randomUUID().toString();
+
         CompletableFuture.runAsync(() -> {
             try {
-                String sessionId = UUID.randomUUID().toString();
                 sendSse(emitter, "INIT", "Starting migration for project: " + sourceProjectName);
 
                 Path sourceDir = Paths.get(projectsDirectory, sourceProjectName);
@@ -105,87 +160,12 @@ public class TriggerMigrationService {
                 Path controllerFile = targetDir.resolve("src/main/java/com/cummins/spriced/parts/pricing/controller/ProcessorController.java");
 
                 Files.createDirectories(serviceImplDir);
-
-                // Overwrite the controller to start fully clean
                 Files.writeString(controllerFile, getCleanControllerBase(), StandardCharsets.UTF_8);
 
-                String refServiceCode = getReferenceService();
-                String refControllerCode = getReferenceController();
+                MigrationSessionContext ctx = new MigrationSessionContext(sessionId, sourceProjectName, newBranchName, emitter, targetDir, serviceImplDir, streamDir, controllerFile);
+                sessionRegistry.put(sessionId, ctx);
 
-                List<String> accumulatedControllerMethods = new ArrayList<>();
-                List<String> accumulatedAutowiredFields = new ArrayList<>();
-
-                int total = TRIGGER_DEFINITIONS.size();
-                int current = 0;
-
-                for (TriggerMapping mapping : TRIGGER_DEFINITIONS) {
-                    current++;
-                    Path processorPath = streamDir.resolve(mapping.processorFileName());
-
-                    if (!Files.exists(processorPath)) {
-                        sendSse(emitter, "WARN", String.format("[%d/%d] File %s missing. Skipping.", current, total, mapping.processorFileName()));
-                        continue;
-                    }
-
-                    sendSse(emitter, "PROGRESS", String.format("[%d/%d] Processing %s (Code + DB DEAMs)...", current, total, mapping.triggerName()));
-                    String processorCode = Files.readString(processorPath, StandardCharsets.UTF_8);
-
-                    String aiResponseJson = chatWithMigrationAgent(mapping, processorCode, refServiceCode, refControllerCode, sessionId, emitter);
-
-                    try {
-                        JsonNode root = objectMapper.readTree(aiResponseJson);
-
-                        // Extract DB tool verification from LLM and explicitly log it to UI
-                        String analyzedTable = root.path("analyzedTable").asText("Unknown");
-                        if (!"Unknown".equals(analyzedTable)) {
-                            sendSse(emitter, "DB_TOOL", "SUCCESS: LLM executed getTableSchema for DB table [" + analyzedTable + "]");
-                            logger.info("LLM reported fetching schema for table: {}", analyzedTable);
-                        } else {
-                            sendSse(emitter, "WARN", "LLM bypassed the DB Table schema tool for this trigger.");
-                        }
-
-                        // 1. Process Java Code
-                        String serviceClassName = root.path("serviceClassName").asText();
-                        Path newServicePath = serviceImplDir.resolve(serviceClassName + ".java");
-                        Files.writeString(newServicePath, root.path("serviceClassCode").asText(), StandardCharsets.UTF_8);
-
-                        accumulatedAutowiredFields.add(root.path("controllerAutowiredField").asText());
-                        accumulatedControllerMethods.add(root.path("controllerMethodCode").asText());
-
-                        // 2. Process DEAMs
-                        JsonNode deamsNode = root.path("deams");
-                        if (deamsNode.isArray() && !deamsNode.isEmpty()) {
-                            Path deamsDir = targetDir.resolve("platform_configs/deams");
-                            Files.createDirectories(deamsDir);
-                            for (JsonNode deam : deamsNode) {
-                                String entityName = deam.path("entity").asText(mapping.tableName());
-                                Files.writeString(deamsDir.resolve(entityName + ".json"), deam.toPrettyString(), StandardCharsets.UTF_8);
-                            }
-                            sendSse(emitter, "INFO", "Generated DEAM configurations with Virtual Attributes for " + mapping.tableName());
-                        }
-
-                        // 3. Process Workflows
-                        JsonNode workflowNode = root.path("workflow");
-                        if (!workflowNode.isMissingNode() && !workflowNode.isEmpty()) {
-                            Path wfDir = targetDir.resolve("platform_configs/workflows");
-                            Files.createDirectories(wfDir);
-                            String wfName = workflowNode.path("workflowName").asText(mapping.tableName() + "_workflow");
-                            Files.writeString(wfDir.resolve(wfName + ".json"), workflowNode.toPrettyString(), StandardCharsets.UTF_8);
-                            sendSse(emitter, "INFO", "Generated Workflow mapping JSON for " + mapping.tableName());
-                        }
-
-                        sendSse(emitter, "SUCCESS", "Generated REST endpoint and JSON Configs for " + mapping.triggerName());
-                    } catch (Exception ex) {
-                        sendSse(emitter, "ERROR", "Failed to parse AI response for " + mapping.triggerName() + ". Error: " + ex.getMessage());
-                        logger.error("AI Generation error for {}: response={}", mapping.triggerName(), aiResponseJson, ex);
-                    }
-                }
-
-                sendSse(emitter, "CONTROLLER", "Appending all endpoints into ProcessorController.java...");
-                injectIntoController(controllerFile, accumulatedAutowiredFields, accumulatedControllerMethods);
-
-                sendSse(emitter, "COMPLETE", "Migration completed successfully.");
-                emitter.complete();
+                processLoop(sessionId, null);
 
             } catch (Exception e) {
                 logger.error("Migration failed", e);
@@ -193,16 +173,148 @@ public class TriggerMigrationService {
                 emitter.completeWithError(e);
             }
         });
+
+        return sessionId;
     }
 
-    private String chatWithMigrationAgent(TriggerMapping mapping, String processorCode, String refService, String refController, String sessionId, SseEmitter emitter) {
+    public void resumeMigration(String sessionId, String userOverrideTableName) {
+        CompletableFuture.runAsync(() -> {
+            try {
+                processLoop(sessionId, userOverrideTableName);
+            } catch (Exception e) {
+                logger.error("Resume failed", e);
+            }
+        });
+    }
+
+    private void processLoop(String sessionId, String userOverrideTableName) {
+        MigrationSessionContext ctx = sessionRegistry.get(sessionId);
+        if (ctx == null) return;
+
+        int total = TRIGGER_DEFINITIONS.size();
+        String refServiceCode = getReferenceService();
+        String refControllerCode = getReferenceController();
+
+        try {
+            while (ctx.currentIndex < total) {
+                TriggerMapping mapping = TRIGGER_DEFINITIONS.get(ctx.currentIndex);
+                Path processorPath = ctx.streamDir.resolve(mapping.processorFileName());
+
+                if (!Files.exists(processorPath)) {
+                    sendSse(ctx.emitter, "WARN", String.format("[%d/%d] File %s missing. Skipping.", ctx.currentIndex + 1, total, mapping.processorFileName()));
+                    ctx.currentIndex++;
+                    continue;
+                }
+
+                sendSse(ctx.emitter, "PROGRESS", String.format("[%d/%d] Processing %s (Code + DB DEAMs)...", ctx.currentIndex + 1, total, mapping.triggerName()));
+                String processorCode = Files.readString(processorPath, StandardCharsets.UTF_8);
+
+                try {
+                    String aiResponseJson = chatWithMigrationAgent(mapping, processorCode, refServiceCode, refControllerCode, ctx.sessionId, ctx.emitter, userOverrideTableName);
+
+                    // SKIP logic validation
+                    boolean isSkipped = "SKIP".equalsIgnoreCase(userOverrideTableName);
+
+                    // Clear override after using it once
+                    userOverrideTableName = null;
+
+                    JsonNode root = objectMapper.readTree(aiResponseJson);
+
+                    String analyzedTable = root.path("analyzedTable").asText("Unknown");
+
+                    if (!isSkipped && ("Unknown".equals(analyzedTable) || analyzedTable.contains("schema not found"))) {
+                        // Pass both TriggerName and TableName
+                        throw new InteractivePromptException(mapping.triggerName(), mapping.tableName(), "Table schema could not be verified by tools.");
+                    }
+
+                    if (!isSkipped) {
+                        sendSse(ctx.emitter, "DB_TOOL", "SUCCESS: LLM executed getTableSchema for DB table [" + analyzedTable + "]");
+                        logger.info("LLM reported fetching schema for table: {}", analyzedTable);
+                    } else {
+                        sendSse(ctx.emitter, "INFO", "Bypassing DEAM & WFM Generation due to SKIP override.");
+                    }
+
+                    // 1. Process Java Code
+                    String serviceClassName = root.path("serviceClassName").asText();
+                    Path newServicePath = ctx.serviceImplDir.resolve(serviceClassName + ".java");
+                    Files.writeString(newServicePath, root.path("serviceClassCode").asText(), StandardCharsets.UTF_8);
+
+                    ctx.accumulatedAutowiredFields.add(root.path("controllerAutowiredField").asText());
+                    ctx.accumulatedControllerMethods.add(root.path("controllerMethodCode").asText());
+
+                    // 2. Process DEAMs
+                    JsonNode deamsNode = root.path("deams");
+                    if (!isSkipped && deamsNode != null && deamsNode.isArray() && !deamsNode.isEmpty()) {
+                        Path deamsDir = ctx.targetDir.resolve("platform_configs/deams");
+                        Files.createDirectories(deamsDir);
+                        for (JsonNode deam : deamsNode) {
+                            String entityName = deam.path("entity").asText(mapping.tableName());
+                            Files.writeString(deamsDir.resolve(entityName + ".json"), deam.toPrettyString(), StandardCharsets.UTF_8);
+                        }
+                        sendSse(ctx.emitter, "INFO", "Generated DEAM configurations with Virtual Attributes for " + mapping.tableName());
+                    }
+
+                    // 3. Process Workflows
+                    JsonNode workflowNode = root.path("workflow");
+                    if (!isSkipped && workflowNode != null && !workflowNode.isMissingNode() && !workflowNode.isEmpty()) {
+                        Path wfDir = ctx.targetDir.resolve("platform_configs/workflows");
+                        Files.createDirectories(wfDir);
+                        String wfName = workflowNode.path("workflowName").asText(mapping.tableName() + "_workflow");
+                        Files.writeString(wfDir.resolve(wfName + ".json"), workflowNode.toPrettyString(), StandardCharsets.UTF_8);
+                        sendSse(ctx.emitter, "INFO", "Generated Workflow mapping JSON for " + mapping.tableName());
+                    }
+
+                    sendSse(ctx.emitter, "SUCCESS", "Generated REST endpoint and JSON Configs for " + mapping.triggerName());
+
+                    ctx.currentIndex++;
+
+                } catch (InteractivePromptException e) {
+                    sendSse(ctx.emitter, "WARN", "Tool Execution Halted: " + e.getMessage());
+                    // Pass Trigger Name | Table Name to UI
+                    sendSse(ctx.emitter, "INPUT_REQUIRED", e.getTriggerName() + "|" + e.getTableName());
+                    return; // PAUSE THE LOOP
+                } catch (Exception ex) {
+                    sendSse(ctx.emitter, "ERROR", "Failed to parse AI response for " + mapping.triggerName() + ". Check Spring Console.");
+                    logger.error("AI Generation error for {}: ", mapping.triggerName(), ex);
+                    ctx.currentIndex++;
+                }
+            }
+
+            sendSse(ctx.emitter, "CONTROLLER", "Appending all endpoints into ProcessorController.java...");
+            injectIntoController(ctx.controllerFile, ctx.accumulatedAutowiredFields, ctx.accumulatedControllerMethods);
+
+            sendSse(ctx.emitter, "COMPLETE", "Migration completed successfully.");
+            ctx.emitter.complete();
+            sessionRegistry.remove(sessionId);
+
+        } catch (Exception e) {
+            logger.error("Process loop failed", e);
+            sendSse(ctx.emitter, "FATAL", "Migration aborted: " + e.getMessage());
+            ctx.emitter.completeWithError(e);
+            sessionRegistry.remove(sessionId);
+        }
+    }
+
+    private String chatWithMigrationAgent(TriggerMapping mapping, String processorCode, String refService, String refController, String sessionId, SseEmitter emitter, String userOverrideTableName) {
         String systemPrompt = buildSystemPrompt(refService, refController);
 
         StringBuilder enrichedMessage = new StringBuilder();
         enrichedMessage.append("Generate the matching REST Service, Controller endpoint, DEAM JSON, and WFM JSON for the following Trigger.\n\n");
         enrichedMessage.append("Trigger Name: ").append(mapping.triggerName()).append("\n");
         enrichedMessage.append("Target Endpoint: /").append(mapping.endpointPath()).append("\n");
-        enrichedMessage.append("Database Target Table: ").append(mapping.tableName()).append("\n\n");
+
+        String targetTable = mapping.tableName().toLowerCase();
+
+        if ("SKIP".equalsIgnoreCase(userOverrideTableName)) {
+            enrichedMessage.append("Database Target Table: NONE. THIS IS A LOGICAL TRIGGER.\n");
+            enrichedMessage.append("CRITICAL OVERRIDE: DO NOT generate any DEAMs or Workflows for this trigger. Leave the 'deams' and 'workflow' JSON arrays completely EMPTY. ONLY generate the Service and Controller.\n\n");
+        } else if (userOverrideTableName != null && !userOverrideTableName.trim().isEmpty()) {
+            targetTable = userOverrideTableName.trim().toLowerCase();
+            enrichedMessage.append("Database Target Table: USE THIS EXACT OVERRIDE TABLE NAME FOR TOOLS -> ").append(targetTable).append("\n\n");
+        } else {
+            enrichedMessage.append("Database Target Table: ").append(targetTable).append("\n\n");
+        }
+
         enrichedMessage.append("--- UPLOADED FILE CONTEXT ---\n");
         enrichedMessage.append("File Name: ").append(mapping.processorFileName()).append("\n");
         enrichedMessage.append(processorCode).append("\n\n");
@@ -214,8 +326,7 @@ public class TriggerMigrationService {
         logger.info("\n{}\n", fullPromptText);
         logger.info("======================================================================\n\n");
 
-        // Push the entire prompt to the UI so the user can see all the data being sent
-        sendSse(emitter, "PROMPT", "PROMPT SENT TO LLM:\n----------------------------------------\n" + fullPromptText + "\n----------------------------------------");
+        sendSse(emitter, "PROMPT", "PROMPT SENT TO LLM (Check Spring console for full payload)");
 
         String aiResponse = chatClient.prompt()
                 .system(systemPrompt)
@@ -226,7 +337,6 @@ public class TriggerMigrationService {
 
         logger.info("\n\nRAW LLM RESPONSE FOR {}:\n{}\n\n", mapping.triggerName(), aiResponse);
 
-        // BULLETPROOF JSON EXTRACTION
         int startIndex = aiResponse.indexOf('{');
         int endIndex = aiResponse.lastIndexOf('}');
 
@@ -249,11 +359,11 @@ public class TriggerMigrationService {
                If the original processor invokes a downstream sub-processor, replace it with the new `*ProcessService` equivalent (e.g., `LocalPartPricingChangeProcessService.process(...)`). NEVER autowire Kafka classes.
                
             3. DEAM JSON CREATION STEPS (CRITICAL):
-               - RULE 1: MANDATORY to use the `getTableSchema` tool to fetch actual DB columns.
+               - RULE 1: MANDATORY to use the `getTableSchema` tool to fetch actual DB columns. You MUST pass the table name to the tool in STRICTLY LOWERCASE. If the table is not found, output "schema not found" in the "analyzedTable" field and halt structure generation.
                - RULE 2: `attributesList` MUST be an array of fully detailed JSON Objects. NEVER output a flat array of strings like `["id", "code"]`.
                - RULE 3: Standard Attribute format: `{"name": "col", "type": "string", "displayName": "Col", "isVirtual": false}`
-               - RULE 4: Foreign Key (Physical ID): If a column links to another table (e.g., `target_id` linking to `x_target_table`), you MUST include `"referencedEntity": ["x_target_table"]` and `"referencedAttribute": ["id"]`.
-               - RULE 5: Foreign Key (Virtual Ref): Immediately after the Physical ID, create a Virtual Attribute to hold the text representation (e.g., `target_id_ref`) with `"isVirtual": true`, `"type": "string"`, and `"virtualConfig": [{"operator": "CONCAT", "entity": "x_target_table", "attribute": "code"}]`.
+               - RULE 4: Foreign Key (Physical ID): If a column links to another table, you MUST include `"referencedEntity": ["x_target_table"]` and `"referencedAttribute": ["id"]`.
+               - RULE 5: Foreign Key (Virtual Ref): Immediately after the Physical ID, create a Virtual Attribute to hold the text representation with `"isVirtual": true`, `"type": "string"`, and `"virtualConfig": [{"operator": "CONCAT", "entity": "x_target_table", "attribute": "code"}]`.
                - RULE 6: Include a `deamReads` array with a standard `fetchIdFromCode` filter.
 
             4. WORKFLOW WFM CREATION STEPS (CRITICAL):
@@ -277,7 +387,7 @@ public class TriggerMigrationService {
             OUTPUT FORMAT (STRICT JSON ONLY):
             Reply with ONLY the following JSON structure filled with the generated data. NO Markdown, NO conversational text.
             {
-              "analyzedTable": "name_of_the_table_fetched_via_tool",
+              "analyzedTable": "name_of_the_table_fetched_via_tool_OR_schema_not_found",
               "serviceClassName": "e.g., DnpricingChangeProcessService",
               "serviceClassCode": "Full Java source code of the service",
               "controllerAutowiredField": "@Autowired private DnpricingChangeProcessService dnpricingChangeProcessService;",

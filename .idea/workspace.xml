@@ -5,8 +5,12 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="5ee6c000-81a5-4768-a609-00f7830c2637" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/.gitattributes" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/.gitignore" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/sim/spriced/pahal/controllers/MigrationController.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/sim/spriced/pahal/controllers/MigrationController.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/sim/spriced/pahal/services/TriggerMigrationService.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/sim/spriced/pahal/services/TriggerMigrationService.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/sim/spriced/pahal/tools/PlatformDatabaseTools.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/sim/spriced/pahal/tools/PlatformDatabaseTools.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/application.properties" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/application.properties" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/static/part_pricing.html" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/static/part_pricing.html" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -26,10 +30,10 @@
   <component name="MavenRunner">
     <option name="skipTests" value="true" />
   </component>
-  <component name="ProjectColorInfo"><![CDATA[{
-  "associatedIndex": 5,
-  "fromUser": false
-}]]></component>
+  <component name="ProjectColorInfo">{
+  &quot;associatedIndex&quot;: 5,
+  &quot;fromUser&quot;: false
+}</component>
   <component name="ProjectId" id="3KtsGarcSJDmrBsTnfAEiIaI0Vv" />
   <component name="ProjectViewState">
     <option name="hideEmptyMiddlePackages" value="true" />
@@ -37,6 +41,7 @@
   </component>
   <component name="PropertiesComponent"><![CDATA[{
   "keyToString": {
+    "JavaScript Debug.part_pricing.html.executor": "Run",
     "Maven.pahal [install].executor": "Run",
     "ModuleVcsDetector.initialDetectionPerformed": "true",
     "RunOnceActivity.ShowReadmeOnStart": "true",
@@ -81,5 +86,9 @@
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
+  </component>
+  <component name="XSLT-Support.FileAssociations.UIState">
+    <expand />
+    <select />
   </component>
 </project>

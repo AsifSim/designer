@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>New DEAM Generator</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f8f9fa; margin: 40px; }
+        .container { max-width: 800px; margin: 0 auto; }
+        .card { background: #ffffff; padding: 25px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        h3 { margin-top: 0; color: #333; }
+        .form-group { margin-bottom: 20px; }
+        label { display: block; margin-bottom: 8px; font-weight: 600; color: #555; }
+        input[type="text"] { width: 100%; padding: 10px; border: 1px solid #ced4da; border-radius: 4px; box-sizing: border-box; font-size: 14px; }
+        button { padding: 10px 20px; background-color: #0d6efd; color: #fff; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; width: 100%; font-size: 15px;}
+        button:hover { background-color: #0b5ed7; }
+        button:disabled { background-color: #6c757d; cursor: not-allowed; }
+
+        .alert { margin-top: 20px; padding: 12px; border-radius: 4px; display: none; font-size: 14px; }
+        .alert-success { background-color: #d1e7dd; color: #0f5132; border: 1px solid #badbcc; }
+        .alert-danger { background-color: #f8d7da; color: #842029; border: 1px solid #f5c2c7; }
+
+        .json-display { background: #272822; color: #f8f8f2; padding: 15px; border-radius: 6px; overflow-x: auto; max-height: 500px; font-family: 'Courier New', Courier, monospace; font-size: 13px; margin-top: 15px; }
+        .copy-btn { width: auto; font-size: 12px; padding: 5px 10px; background-color: #6c757d; float: right; margin-bottom: 10px; }
+        .copy-btn:hover { background-color: #5c636a; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="card">
+        <h3>Generate Fresh DEAM Config</h3>
+        <p style="font-size: 14px; color: #666;">
+            Builds a brand new DEAM configuration dynamically from the Postgres database schema and constraint tables, overwriting any existing payload.
+        </p>
+
+        <div class="form-group">
+            <label for="tableName">Table / Entity Name</label>
+            <input type="text" id="tableName" placeholder="e.g. invoice_header">
+        </div>
+
+        <button id="submitBtn" onclick="processNewDeam()">Create New DEAM JSON</button>
+
+        <div id="statusAlert" class="alert"></div>
+    </div>
+
+    <!-- JSON Result Display -->
+    <div class="card" id="jsonCard" style="display: none;">
+        <h3>Generated DEAM Output</h3>
+        <button class="copy-btn" onclick="copyJson()">Copy JSON</button>
+        <pre class="json-display" id="jsonOutput"></pre>
+    </div>
+</div>
+
+<script>
+    async function processNewDeam() {
+        const tableName = document.getElementById('tableName').value.trim();
+        const alertBox = document.getElementById('statusAlert');
+        const jsonCard = document.getElementById('jsonCard');
+        const jsonOutput = document.getElementById('jsonOutput');
+        const btn = document.getElementById('submitBtn');
+
+        if (!tableName) {
+            showAlert('Please provide a valid table name.', false);
+            return;
+        }
+
+        alertBox.style.display = 'none';
+        jsonCard.style.display = 'none';
+        btn.disabled = true;
+        btn.innerText = 'Building DEAM...';
+
+        try {
+            const response = await fetch(`/api/v1/deam/generate-new?tableName=${encodeURIComponent(tableName)}`, {
+                method: 'POST'
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                showAlert(data.message, true);
+
+                // Format and display the JSON
+                if (data.json) {
+                    const parsedJson = JSON.parse(data.json);
+                    jsonOutput.textContent = JSON.stringify(parsedJson, null, 2);
+                    jsonCard.style.display = 'block';
+                }
+            } else {
+                showAlert(data.error || 'An unexpected error occurred.', false);
+            }
+        } catch (error) {
+            showAlert('Network error: ' + error.message, false);
+        } finally {
+            btn.disabled = false;
+            btn.innerText = 'Create New DEAM JSON';
+        }
+    }
+
+    function showAlert(message, isSuccess) {
+        const alertBox = document.getElementById('statusAlert');
+        alertBox.textContent = message;
+        alertBox.className = 'alert ' + (isSuccess ? 'alert-success' : 'alert-danger');
+        alertBox.style.display = 'block';
+    }
+
+    function copyJson() {
+        const jsonText = document.getElementById('jsonOutput').textContent;
+        navigator.clipboard.writeText(jsonText).then(() => {
+            alert('JSON copied to clipboard!');
+        }).catch(err => {
+            alert('Failed to copy JSON: ' + err);
+        });
+    }
+</script>
+</body>
+</html>

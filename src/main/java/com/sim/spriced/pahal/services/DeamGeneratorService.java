@@ -1,0 +1,215 @@
+package com.sim.spriced.pahal.services;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
+@Service
+public class DeamGeneratorService {
+
+    private static final Logger logger = LoggerFactory.getLogger(DeamGeneratorService.class);
+
+    private final JdbcTemplate jdbcTemplate;
+    private final ObjectMapper objectMapper;
+
+    public DeamGeneratorService(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper) {
+        this.jdbcTemplate = jdbcTemplate;
+        this.objectMapper = objectMapper;
+    }
+
+    @Transactional
+    public Map<String, String> generateAndSaveNewDeam(String tableName) throws Exception {
+
+        // 1. Fetch Column Metadata
+        String colSql = """
+            SELECT column_name, data_type, is_nullable, character_maximum_length 
+            FROM information_schema.columns 
+            WHERE table_name = ?
+            """;
+        List<Map<String, Object>> columns = jdbcTemplate.queryForList(colSql, tableName);
+        if (columns.isEmpty()) {
+            throw new IllegalArgumentException("Table '" + tableName + "' does not exist in the database.");
+        }
+
+        // 2. Fetch Primary Key
+        String pkSql = """
+            SELECT kcu.column_name
+            FROM information_schema.table_constraints tc
+            JOIN information_schema.key_column_usage kcu ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema
+            WHERE tc.table_name = ? AND tc.constraint_type = 'PRIMARY KEY'
+            """;
+        List<String> primaryKeys = jdbcTemplate.queryForList(pkSql, String.class, tableName);
+        String primaryKey = primaryKeys.isEmpty() ? "id" : primaryKeys.get(0);
+        String primaryKeyType = "string";
+
+        // 3. Fetch Foreign Keys
+        String fkSql = """
+            SELECT
+                kcu.column_name as local_column,
+                ccu.table_name AS foreign_table,
+                ccu.column_name AS foreign_column
+            FROM information_schema.table_constraints AS tc
+            JOIN information_schema.key_column_usage AS kcu ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema
+            JOIN information_schema.constraint_column_usage AS ccu ON ccu.constraint_name = tc.constraint_name AND ccu.table_schema = tc.table_schema
+            WHERE tc.constraint_type = 'FOREIGN KEY' AND tc.table_name = ?
+            """;
+        List<Map<String, Object>> foreignKeys = jdbcTemplate.queryForList(fkSql, tableName);
+
+        // Map FKs by local column name for easy lookup and to REMOVE duplicates returned by PostgreSQL
+        Map<String, Map<String, Object>> fkMap = new HashMap<>();
+        for (Map<String, Object> fk : foreignKeys) {
+            fkMap.put((String) fk.get("local_column"), fk);
+        }
+
+        // 4. Build standard Attributes (with Cross-Entity Links)
+        List<Map<String, Object>> attributesList = new ArrayList<>();
+
+        for (Map<String, Object> col : columns) {
+            String colName = (String) col.get("column_name");
+            String dbType = (String) col.get("data_type");
+            String isNullable = (String) col.get("is_nullable");
+            Integer maxLen = col.get("character_maximum_length") != null ? ((Number) col.get("character_maximum_length")).intValue() : null;
+
+            String mappedType = mapPostgresTypeToDeam(dbType);
+
+            if (colName.equals(primaryKey)) {
+                primaryKeyType = mappedType;
+            }
+
+            Map<String, Object> attr = new LinkedHashMap<>();
+            attr.put("name", colName);
+            attr.put("type", mappedType);
+            attr.put("scale", null);
+            attr.put("unique", colName.equals(primaryKey));
+            attr.put("indexed", colName.equals(primaryKey));
+            attr.put("mandatory", "NO".equalsIgnoreCase(isNullable));
+            attr.put("maxLength", maxLen);
+            attr.put("precision", null);
+            attr.put("businessKey", colName.equals(primaryKey));
+            attr.put("displayName", formatDisplayName(colName));
+
+            // CRITICAL: Declare the referenced entity link as arrays for the virtual config to ride
+            // This satisfies: WHERE referenced_table.id = current_entity_col
+            if (fkMap.containsKey(colName)) {
+                attr.put("referencedEntity", List.of((String) fkMap.get(colName).get("foreign_table")));
+                attr.put("referencedAttribute", List.of((String) fkMap.get(colName).get("foreign_column")));
+            }
+
+            attr.put("validValues", new ArrayList<>());
+            attr.put("staticString", "");
+            attr.put("autoGenerated", false);
+            attr.put("enableAttribute", true);
+
+            attributesList.add(attr);
+        }
+
+        // 5. Append Virtual Attributes that ride the links established in Step 4
+        // Iterating over fkMap.values() ensures we don't generate duplicate virtual attributes
+        for (Map<String, Object> fk : fkMap.values()) {
+            String localColumn = (String) fk.get("local_column");
+            String foreignTable = (String) fk.get("foreign_table");
+
+            Map<String, Object> virtualAttr = new LinkedHashMap<>();
+            virtualAttr.put("name", localColumn + "_ref");
+            virtualAttr.put("type", "string");
+            virtualAttr.put("scale", null);
+            virtualAttr.put("unique", false);
+            virtualAttr.put("indexed", false);
+
+            virtualAttr.put("isVirtual", true);
+            virtualAttr.put("versioned", false); // Optional SAVA flag
+
+            virtualAttr.put("mandatory", false);
+            virtualAttr.put("maxLength", null);
+            virtualAttr.put("precision", null);
+            virtualAttr.put("businessKey", false);
+            virtualAttr.put("displayName", "Ref: " + formatDisplayName(foreignTable));
+            virtualAttr.put("validValues", new ArrayList<>());
+            virtualAttr.put("staticString", "");
+            virtualAttr.put("autoGenerated", false);
+            virtualAttr.put("enableAttribute", true);
+
+            // Construct minimal cross-entity lookup term targeting "code"
+            // This satisfies: SELECT code FROM referenced_table
+            Map<String, Object> vConfigTerm = new LinkedHashMap<>();
+            vConfigTerm.put("entity", foreignTable);
+            vConfigTerm.put("attribute", "code");
+
+            virtualAttr.put("virtualConfig", List.of(vConfigTerm));
+            attributesList.add(virtualAttr);
+        }
+
+        // 6. Construct Root DEAM Entity
+        Map<String, Object> deamEntity = new LinkedHashMap<>();
+        deamEntity.put("entity", tableName);
+
+        Map<String, Object> defaultRead = new LinkedHashMap<>();
+        Map<String, Object> filter = new LinkedHashMap<>();
+        filter.put("join", new LinkedHashMap<>());
+        filter.put("limit", null);
+        filter.put("where", new ArrayList<>());
+        filter.put("offset", null);
+        filter.put("orderBy", new LinkedHashMap<>());
+        filter.put("attributeNames", List.of("*"));
+        defaultRead.put("filter", filter);
+        defaultRead.put("filterName", tableName + "_read_all");
+
+        deamEntity.put("deamReads", List.of(defaultRead));
+        deamEntity.put("primaryKey", primaryKey);
+        deamEntity.put("displayName", formatDisplayName(tableName));
+        deamEntity.put("businessRules", new ArrayList<>());
+        deamEntity.put("childEntities", new ArrayList<>());
+        deamEntity.put("attributesList", attributesList);
+        deamEntity.put("primaryKeyType", primaryKeyType);
+
+        List<Map<String, Object>> finalDeamPayload = List.of(deamEntity);
+        String newJson = objectMapper.writeValueAsString(finalDeamPayload);
+
+        // 7. Upsert into entity_store
+        String checkSql = "SELECT COUNT(*) FROM entity_store WHERE entity_name = ?";
+        int count = jdbcTemplate.queryForObject(checkSql, Integer.class, tableName);
+
+        if (count > 0) {
+            String updateSql = "UPDATE entity_store SET payload = ?::jsonb WHERE entity_name = ?";
+            jdbcTemplate.update(updateSql, newJson, tableName);
+        } else {
+            String uuid = java.util.UUID.randomUUID().toString();
+            String insertSql = "INSERT INTO entity_store (uuid, entity_name, payload, is_enabled) VALUES (?, ?, ?::jsonb, true)";
+            jdbcTemplate.update(insertSql, uuid, tableName, newJson);
+        }
+
+        Map<String, String> response = new LinkedHashMap<>();
+        response.put("message", "Successfully created DEAM configuration for '" + tableName + "' (" + columns.size() + " columns, " + fkMap.size() + " cross-entity references).");
+        response.put("json", newJson);
+        return response;
+    }
+
+    private String mapPostgresTypeToDeam(String dbType) {
+        String lowerType = dbType.toLowerCase();
+        if (lowerType.contains("int") || lowerType.contains("serial")) return "integer";
+        if (lowerType.contains("numeric") || lowerType.contains("decimal") || lowerType.contains("double") || lowerType.contains("real")) return "double";
+        if (lowerType.contains("bool")) return "boolean";
+        if (lowerType.contains("timestamp") || lowerType.contains("date")) return "datetime";
+        return "string";
+    }
+
+    private String formatDisplayName(String name) {
+        String[] parts = name.split("_");
+        StringBuilder sb = new StringBuilder();
+        for (String part : parts) {
+            if (part.length() > 0) {
+                sb.append(Character.toUpperCase(part.charAt(0))).append(part.substring(1)).append(" ");
+            }
+        }
+        return sb.toString().trim();
+    }
+}

@@ -6,9 +6,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
+import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 
 import java.util.List;
 import java.util.Map;
@@ -132,4 +135,31 @@ public class PlatformDatabaseTools {
             return "DDL Error: " + e.getMessage();
         }
     }
+
+    @Tool(description = "Retrieves the foreign key constraints for a specified PostgreSQL table, including the local column, foreign table, and foreign column.")
+    public List<Map<String, Object>> getTableForeignKeys(@ToolParam(description = "The table name") String tableName) {
+        ToolTracker.track("getTableForeignKeys", "Retrieved foreign keys for table: " + tableName);
+        String sql = """
+            SELECT
+                kcu.column_name as local_column,
+                ccu.table_name AS foreign_table,
+                ccu.column_name AS foreign_column
+            FROM information_schema.table_constraints AS tc
+            JOIN information_schema.key_column_usage AS kcu
+              ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema
+            JOIN information_schema.constraint_column_usage AS ccu
+              ON ccu.constraint_name = tc.constraint_name AND ccu.table_schema = tc.table_schema
+            WHERE tc.constraint_type = 'FOREIGN KEY' AND tc.table_name = ?;
+            """;
+        try {
+            List<Map<String, Object>> result = jdbcTemplate.queryForList(sql, tableName);
+            if (result.isEmpty()) {
+                return List.of(Map.of("message", "No foreign keys found for table: " + tableName));
+            }
+            return result;
+        } catch (Exception e) {
+            return List.of(Map.of("error", "Failed to fetch foreign keys: " + e.getMessage()));
+        }
+    }
+
 }

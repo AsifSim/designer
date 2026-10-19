@@ -15,7 +15,7 @@
         }
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { background-color: var(--bg-main); color: var(--text-main); font-family: var(--font-sans); padding: 2rem; line-height: 1.5; }
-        .container { max-w-width: 1000px; margin: 0 auto; max-width: 1100px; }
+        .container { margin: 0 auto; max-width: 1100px; }
 
         .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 1.5rem; margin-bottom: 1.5rem; }
         .header h1 { font-size: 1.5rem; display: flex; align-items: center; gap: 0.75rem; }
@@ -56,6 +56,10 @@
         .c-error { color: var(--danger); }
         .c-warning { color: var(--warning); }
         .c-default { color: var(--text-muted); }
+
+        .interactive-prompt { background: var(--bg-card); padding: 10px; border: 1px dashed var(--warning); border-radius: 6px; margin-top: 5px; display: flex; flex-direction: column; gap: 10px; }
+        .interactive-prompt input { width: 70%; padding: 0.5rem; }
+        .interactive-prompt button { height: auto; padding: 0.5rem 1rem; background: var(--warning); color: #000; }
     </style>
 </head>
 <body>
@@ -108,17 +112,25 @@
     async function loadProjects() {
         try {
             const res = await fetch(`${API_BASE}/projects`);
+            if (!res.ok) {
+                throw new Error(`Backend Error: HTTP ${res.status}`);
+            }
             const projects = await res.json();
             const select = document.getElementById("projectSelect");
             select.innerHTML = projects.length ? "" : `<option value="">No projects found</option>`;
-            projects.forEach(proj => {
-                const opt = document.createElement("option");
-                opt.value = opt.textContent = proj;
-                if (proj.includes("spriced-client-cummins-parts-pricing")) opt.selected = true;
-                select.appendChild(opt);
-            });
+
+            if (Array.isArray(projects)) {
+                projects.forEach(proj => {
+                    const opt = document.createElement("option");
+                    opt.value = opt.textContent = proj;
+                    if (proj.includes("spriced-client-cummins-parts-pricing")) opt.selected = true;
+                    select.appendChild(opt);
+                });
+            }
         } catch (err) {
             appendLog("ERROR", "Failed to fetch projects list: " + err.message);
+            const select = document.getElementById("projectSelect");
+            select.innerHTML = `<option value="">Error Loading Projects</option>`;
         }
     }
 
@@ -156,12 +168,52 @@
             }
         } catch (err) {
             appendLog("FATAL", "Execution aborted: " + err.message);
-        } finally {
             startBtn.disabled = false;
         }
     }
 
+    async function resumeMigration(triggerName) {
+        const tableInput = document.getElementById("manualTableInput").value.trim();
+        if (!tableInput) return alert("Please enter a valid table name or 'SKIP'.");
+
+        document.getElementById("manualPromptBlock").remove();
+        appendLog("INFO", `Resuming execution using override: ${tableInput}`);
+
+        try {
+            await fetch(`${API_BASE}/resume`, {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ tableName: tableInput })
+            });
+        } catch (err) {
+            appendLog("ERROR", "Failed to send resume signal: " + err.message);
+        }
+    }
+
     function handleServerEvent({ stage, message }) {
+        if (stage === "INPUT_REQUIRED") {
+            const parts = message.split("|");
+            const triggerName = parts[0];
+            const tableName = parts.length > 1 ? parts[1] : "unknown_table";
+
+            const consoleElem = document.getElementById("consoleLog");
+            const promptDiv = document.createElement("div");
+            promptDiv.id = "manualPromptBlock";
+            promptDiv.className = "interactive-prompt";
+            promptDiv.innerHTML = `
+                <div style="width: 100%;">
+                    <div style="font-weight: bold; margin-bottom: 5px;">LLM Failed to find Schema for table '<span style="color:var(--warning)">${tableName}</span>' (Trigger: ${triggerName}).</div>
+                    <div style="margin-bottom: 10px; font-size: 0.85em;">Enter the exact DB table name, or type <strong>SKIP</strong> if this is a logical trigger with no table:</div>
+                    <div style="display: flex; gap: 10px;">
+                        <input type="text" id="manualTableInput" placeholder="e.g. part_entity or SKIP">
+                        <button onclick="resumeMigration('${triggerName}')">Submit & Resume</button>
+                    </div>
+                </div>
+            `;
+            consoleElem.appendChild(promptDiv);
+            consoleElem.scrollTop = consoleElem.scrollHeight;
+            return;
+        }
+
         appendLog(stage, message);
         document.getElementById("currentAction").textContent = message;
 
@@ -175,16 +227,22 @@
         } else if (stage === "COMPLETE") {
             document.getElementById("progressBar").style.width = "100%";
             document.getElementById("progressPercent").textContent = "100%";
+            document.getElementById("startBtn").disabled = false;
+        } else if (stage === "FATAL") {
+            document.getElementById("startBtn").disabled = false;
         }
     }
 
     function appendLog(stage, message) {
         const consoleElem = document.getElementById("consoleLog");
         let colorCls = "c-default";
+
         if (stage === "SUCCESS" || stage === "COMPLETE") colorCls = "c-success";
         else if (stage === "ERROR" || stage === "FATAL") colorCls = "c-error";
         else if (stage === "PROGRESS" || stage === "INFO") colorCls = "c-info";
         else if (stage === "GIT" || stage === "COPY" || stage === "WARN") colorCls = "c-warning";
+        else if (stage === "DB_TOOL") colorCls = "c-warning";
+        else if (stage === "PROMPT") colorCls = "c-info";
 
         const logLine = document.createElement("div");
         logLine.className = "log-line";
