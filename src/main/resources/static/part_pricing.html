@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stream-to-REST Pipeline Migrator</title>
+    <style>
+        :root {
+            --bg-main: #0f172a; --bg-card: #1e293b; --bg-input: #0b0f19;
+            --border: #334155; --primary: #4f46e5; --primary-hover: #4338ca;
+            --text-main: #f8fafc; --text-muted: #94a3b8;
+            --success: #10b981; --warning: #f59e0b; --danger: #ef4444; --info: #38bdf8;
+            --font-sans: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            --font-mono: 'Consolas', 'Monaco', monospace;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { background-color: var(--bg-main); color: var(--text-main); font-family: var(--font-sans); padding: 2rem; line-height: 1.5; }
+        .container { max-w-width: 1000px; margin: 0 auto; max-width: 1100px; }
+
+        .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 1.5rem; margin-bottom: 1.5rem; }
+        .header h1 { font-size: 1.5rem; display: flex; align-items: center; gap: 0.75rem; }
+        .pulse { width: 12px; height: 12px; background-color: var(--success); border-radius: 50%; animation: pulse 2s infinite; }
+        @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); } 70% { box-shadow: 0 0 0 10px rgba(16, 185, 129, 0); } 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); } }
+        .header-sub { font-size: 0.875rem; color: var(--text-muted); margin-top: 0.25rem; }
+        .path-badge { background: var(--bg-card); border: 1px solid var(--border); padding: 0.4rem 0.8rem; border-radius: 6px; font-size: 0.75rem; color: var(--text-muted); }
+
+        .panel { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 1.5rem; margin-bottom: 1.5rem; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr auto; gap: 1.5rem; align-items: end; }
+
+        .form-group { display: flex; flex-direction: column; gap: 0.5rem; }
+        label { font-size: 0.75rem; text-transform: uppercase; font-weight: 600; color: var(--text-muted); letter-spacing: 0.05em; }
+        input, select { background: var(--bg-input); border: 1px solid var(--border); color: var(--text-main); padding: 0.75rem; border-radius: 6px; font-size: 0.875rem; width: 100%; outline: none; }
+        input:focus, select:focus { border-color: var(--primary); }
+
+        button { background: var(--primary); color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 6px; font-weight: 600; cursor: pointer; transition: 0.2s; height: 42px; display: flex; align-items: center; gap: 0.5rem; }
+        button:hover:not(:disabled) { background: var(--primary-hover); }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        .progress-header { display: flex; justify-content: space-between; font-size: 0.875rem; margin-bottom: 0.75rem; }
+        .progress-track { background: var(--bg-input); height: 8px; border-radius: 4px; overflow: hidden; border: 1px solid var(--border); }
+        .progress-bar { background: var(--primary); height: 100%; width: 0%; transition: width 0.3s ease; }
+
+        .console-wrap { border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--bg-input); }
+        .console-header { background: var(--bg-card); padding: 0.5rem 1rem; display: flex; justify-content: space-between; border-bottom: 1px solid var(--border); font-size: 0.75rem; }
+        .dots { display: flex; gap: 6px; align-items: center; }
+        .dots span { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+        .dot-r { background: var(--danger); } .dot-y { background: var(--warning); } .dot-g { background: var(--success); }
+        .console-log { padding: 1rem; height: 400px; overflow-y: auto; font-family: var(--font-mono); font-size: 0.8rem; display: flex; flex-direction: column; gap: 6px; }
+
+        .log-line { display: flex; gap: 10px; align-items: flex-start; }
+        .log-time { color: var(--border); }
+        .log-badge { padding: 2px 6px; border-radius: 4px; font-size: 0.7rem; font-weight: bold; min-width: 65px; text-align: center; background: var(--bg-card); border: 1px solid var(--border); }
+
+        .c-info { color: var(--info); }
+        .c-success { color: var(--success); }
+        .c-error { color: var(--danger); }
+        .c-warning { color: var(--warning); }
+        .c-default { color: var(--text-muted); }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="header">
+        <div>
+            <h1><div class="pulse"></div> Kafka Stream &rarr; REST Migrator</h1>
+            <div class="header-sub">Autonomous Spring AI agent using gpt-oss:120B</div>
+        </div>
+        <div class="path-badge">Root: Desktop/Projects</div>
+    </div>
+
+    <div class="panel grid">
+        <div class="form-group">
+            <label>Source Project</label>
+            <select id="projectSelect"><option value="">Loading projects...</option></select>
+        </div>
+        <div class="form-group">
+            <label>New Git Branch Name</label>
+            <input id="branchName" type="text" value="feat-rest-direct-triggers">
+        </div>
+        <button id="startBtn" onclick="runMigration()">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+            Start Migration
+        </button>
+    </div>
+
+    <div class="panel">
+        <div class="progress-header">
+            <span id="currentAction" style="color: var(--text-muted);">Ready to begin</span>
+            <span id="progressPercent" style="font-family: var(--font-mono); font-weight: bold;">0%</span>
+        </div>
+        <div class="progress-track"><div id="progressBar" class="progress-bar"></div></div>
+    </div>
+
+    <div class="console-wrap">
+        <div class="console-header">
+            <div class="dots"><span class="dot-r"></span><span class="dot-y"></span><span class="dot-g"></span> <span style="margin-left: 8px; color: var(--text-muted); font-family: var(--font-mono);">orchestrator.log</span></div>
+            <button onclick="clearConsole()" style="background:none; border:none; color:var(--text-muted); padding:0; height:auto; font-size:0.75rem;">Clear</button>
+        </div>
+        <div id="consoleLog" class="console-log"></div>
+    </div>
+</div>
+
+<script>
+    const API_BASE = "http://localhost:8080/api/migration";
+
+    window.addEventListener("DOMContentLoaded", loadProjects);
+
+    async function loadProjects() {
+        try {
+            const res = await fetch(`${API_BASE}/projects`);
+            const projects = await res.json();
+            const select = document.getElementById("projectSelect");
+            select.innerHTML = projects.length ? "" : `<option value="">No projects found</option>`;
+            projects.forEach(proj => {
+                const opt = document.createElement("option");
+                opt.value = opt.textContent = proj;
+                if (proj.includes("spriced-client-cummins-parts-pricing")) opt.selected = true;
+                select.appendChild(opt);
+            });
+        } catch (err) {
+            appendLog("ERROR", "Failed to fetch projects list: " + err.message);
+        }
+    }
+
+    async function runMigration() {
+        const project = document.getElementById("projectSelect").value;
+        const branch = document.getElementById("branchName").value;
+        const startBtn = document.getElementById("startBtn");
+
+        if (!project || !branch) return alert("Select a project and branch.");
+
+        startBtn.disabled = true;
+        clearConsole();
+        appendLog("INFO", `Initializing migration for ${project}...`);
+
+        try {
+            const response = await fetch(`${API_BASE}/run`, {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ projectName: project, branchName: branch })
+            });
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = "";
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split("\n\n");
+                buffer = lines.pop();
+                for (const chunk of lines) {
+                    const eventLine = chunk.split("\n").find(l => l.startsWith("data:"));
+                    if (eventLine) handleServerEvent(JSON.parse(eventLine.replace("data:", "").trim()));
+                }
+            }
+        } catch (err) {
+            appendLog("FATAL", "Execution aborted: " + err.message);
+        } finally {
+            startBtn.disabled = false;
+        }
+    }
+
+    function handleServerEvent({ stage, message }) {
+        appendLog(stage, message);
+        document.getElementById("currentAction").textContent = message;
+
+        if (stage === "PROGRESS" || stage === "SUCCESS" || stage === "WARN") {
+            const match = message.match(/\[(\d+)\/(\d+)\]/);
+            if (match) {
+                const percent = Math.round((parseInt(match[1]) / parseInt(match[2])) * 100);
+                document.getElementById("progressBar").style.width = percent + "%";
+                document.getElementById("progressPercent").textContent = percent + "%";
+            }
+        } else if (stage === "COMPLETE") {
+            document.getElementById("progressBar").style.width = "100%";
+            document.getElementById("progressPercent").textContent = "100%";
+        }
+    }
+
+    function appendLog(stage, message) {
+        const consoleElem = document.getElementById("consoleLog");
+        let colorCls = "c-default";
+        if (stage === "SUCCESS" || stage === "COMPLETE") colorCls = "c-success";
+        else if (stage === "ERROR" || stage === "FATAL") colorCls = "c-error";
+        else if (stage === "PROGRESS" || stage === "INFO") colorCls = "c-info";
+        else if (stage === "GIT" || stage === "COPY" || stage === "WARN") colorCls = "c-warning";
+
+        const logLine = document.createElement("div");
+        logLine.className = "log-line";
+        logLine.innerHTML = `<span class="log-time">[${new Date().toLocaleTimeString()}]</span> <span class="log-badge ${colorCls}">${stage}</span> <span class="${colorCls}">${message.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</span>`;
+        consoleElem.appendChild(logLine);
+        consoleElem.scrollTop = consoleElem.scrollHeight;
+    }
+
+    function clearConsole() {
+        document.getElementById("consoleLog").innerHTML = "";
+        document.getElementById("progressBar").style.width = "0%";
+        document.getElementById("progressPercent").textContent = "0%";
+    }
+</script>
+</body>
+</html>

@@ -1,0 +1,1083 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kaveri • Maps, Code & DVM</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <!-- JSZip Library for client-side ZIP generation -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <style>
+        :root {
+            --bg: #f8faf7;
+            --surface: #ffffff;
+            --surface-alt: #fafdfa;
+            --surface-hover: #f0f5f1;
+            --text: #0d1a12;
+            --text-secondary: #3d5545;
+            --text-muted: #6b8573;
+            --border: #d4e4d8;
+            --border-light: #e8f2ea;
+            --accent: #0ea882;
+            --accent-dark: #089170;
+            --accent-light: #d1fae5;
+            --accent-glow: rgba(14, 168, 130, 0.25);
+            --teal: #0ea882;
+            --teal-light: #e6f7f3;
+            --purple: #7c5cfc;
+            --purple-light: #f3efff;
+            --orange: #f2674a;
+            --orange-light: #fef0ed;
+            --amber: #f0a92e;
+            --amber-light: #fef7eb;
+            --green: #22c55e;
+            --green-light: #e6f9ef;
+            --red: #ef4444;
+            --red-light: #fef0ed;
+            --radius-sm: 8px;
+            --radius: 12px;
+            --radius-lg: 16px;
+            --radius-xl: 24px;
+            --shadow-xs: 0 1px 2px rgba(0,0,0,0.03);
+            --shadow-sm: 0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.03);
+            --shadow: 0 4px 6px rgba(0,0,0,0.03), 0 2px 4px rgba(0,0,0,0.02);
+            --shadow-md: 0 10px 20px rgba(0,0,0,0.05), 0 4px 8px rgba(0,0,0,0.03);
+            --shadow-lg: 0 20px 50px rgba(0,0,0,0.08);
+            --transition: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+            --transition-bounce: 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+            --transition-smooth: 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg); color: var(--text);
+            height: 100vh; overflow: hidden;
+            -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
+        }
+
+        .cursor { width: 28px; height: 28px; border: 2px solid var(--accent); border-radius: 50%; position: fixed; pointer-events: none; z-index: 9999; transition: width 0.2s, height 0.2s, border-color 0.2s, background-color 0.2s, box-shadow 0.2s; transform: translate(-50%, -50%); }
+        .cursor.hover { width: 52px; height: 52px; background: rgba(14,168,130,0.06); border-color: var(--accent-dark); box-shadow: 0 0 30px var(--accent-glow); }
+        .cursor.click { width: 34px; height: 34px; background: rgba(14,168,130,0.18); box-shadow: 0 0 20px var(--accent-glow); transition: width 0.1s, height 0.1s, background-color 0.1s; }
+        .cursor-dot { width: 5px; height: 5px; background: var(--accent-dark); border-radius: 50%; position: fixed; pointer-events: none; z-index: 9999; transform: translate(-50%, -50%); box-shadow: 0 0 8px var(--accent-glow); }
+        .cursor-trail { position: fixed; pointer-events: none; z-index: 9997; width: 8px; height: 8px; background: rgba(14,168,130,0.3); border-radius: 50%; transform: translate(-50%, -50%); }
+        #rippleCanvas { position: fixed; top:0; left:0; width:100%; height:100%; pointer-events: none; z-index: 9998; }
+        .particles-bg { position: fixed; top:0; left:0; width:100%; height:100%; pointer-events: none; z-index: 0; overflow: hidden; }
+        .particle { position: absolute; border-radius: 50%; animation: floatParticle 12s infinite ease-in-out; opacity: 0; }
+        @keyframes floatParticle { 0% { transform: translateY(105vh) translateX(0) scale(0) rotate(0deg); opacity:0; } 5% { opacity:0.5; } 15% { transform: translateY(80vh) translateX(30px) scale(1) rotate(90deg); opacity:0.4; } 40% { transform: translateY(40vh) translateX(-40px) scale(0.6) rotate(180deg); opacity:0.3; } 70% { transform: translateY(15vh) translateX(20px) scale(1.2) rotate(270deg); opacity:0.2; } 90% { opacity:0.05; } 100% { transform: translateY(-10vh) translateX(-10px) scale(0) rotate(360deg); opacity:0; } }
+        .app { display: flex; flex-direction: column; height: 100vh; position: relative; z-index: 1; }
+
+        /* Navbar */
+        .navbar { display: flex; align-items: center; justify-content: space-between; padding: 0 20px; height: 60px; background: rgba(255,255,255,0.85); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border-bottom: 1px solid var(--border-light); flex-shrink: 0; position: relative; z-index: 100; gap: 8px; }
+        .navbar::after { content: ''; position: absolute; bottom: -1px; left: 0; width: 100%; height: 1px; background: linear-gradient(90deg, transparent, var(--accent), var(--purple), var(--amber), transparent); opacity: 0.5; animation: shimmerBorder 4s ease-in-out infinite; }
+        @keyframes shimmerBorder { 0%,100% { opacity:0.3; } 50% { opacity:0.8; } }
+        .navbar-brand { display: flex; align-items: center; gap: 8px; text-decoration: none; color: var(--text); flex-shrink: 0; }
+        .navbar-logo { width: 34px; height: 34px; background: linear-gradient(135deg, var(--accent), #14d4a6); border-radius: var(--radius-sm); display: flex; align-items: center; justify-content: center; color: white; font-weight: 900; font-size: 1rem; letter-spacing: 1px; animation: logoGlow 3s ease-in-out infinite; }
+        @keyframes logoGlow { 0%,100% { box-shadow: 0 0 15px rgba(14,168,130,0.3); } 50% { box-shadow: 0 0 30px rgba(20,212,166,0.5); } }
+        .navbar-name { font-weight: 700; font-size: 1.15rem; letter-spacing: -0.3px; background: linear-gradient(135deg, var(--text), var(--accent)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+        .navbar-nav { display: flex; align-items: center; gap: 2px; flex: 1; justify-content: center; overflow-x: auto; flex-wrap: nowrap; }
+        .nav-link { padding: 6px 14px; border-radius: var(--radius-sm); font-weight: 500; font-size: 0.82rem; color: var(--text-secondary); text-decoration: none; transition: var(--transition); display: flex; align-items: center; gap: 6px; white-space: nowrap; flex-shrink: 0; }
+        .nav-link:hover { background: var(--surface-hover); color: var(--text); transform: translateY(-1px); }
+        .nav-link.active { background: var(--accent); color: white; box-shadow: 0 4px 15px rgba(14,168,130,0.3); animation: activePulse 2s ease-in-out infinite; }
+        @keyframes activePulse { 0%,100% { box-shadow: 0 4px 15px rgba(14,168,130,0.3); } 50% { box-shadow: 0 6px 25px rgba(14,168,130,0.5); } }
+        .nav-link .nav-icon { font-size: 0.8rem; width: 16px; text-align: center; transition: var(--transition-bounce); }
+        .nav-link:hover .nav-icon { transform: scale(1.15) rotate(-5deg); }
+        .navbar-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+        .workspace-btn { display: flex; align-items: center; gap: 6px; padding: 6px 12px; background: var(--surface-hover); border: 1px solid var(--border); border-radius: 20px; cursor: pointer; font-size: 0.8rem; font-weight: 500; transition: var(--transition-bounce); color: var(--text-secondary); white-space: nowrap; }
+        .workspace-btn:hover { border-color: var(--accent); color: var(--text); background: var(--surface); transform: translateY(-1px); box-shadow: var(--shadow); }
+        .workspace-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); animation: dotPulse 2s ease-in-out infinite; }
+        @keyframes dotPulse { 0%,100% { box-shadow: 0 0 0 0 rgba(34,197,94,0.4); } 50% { box-shadow: 0 0 0 6px rgba(34,197,94,0); } }
+        .user-btn { display: flex; align-items: center; gap: 6px; padding: 4px 10px 4px 4px; background: var(--surface-hover); border: 1px solid var(--border); border-radius: 20px; cursor: pointer; transition: var(--transition-bounce); white-space: nowrap; }
+        .user-btn:hover { background: var(--surface); box-shadow: var(--shadow); transform: translateY(-1px); }
+        .user-avatar { width: 28px; height: 28px; border-radius: 50%; background: linear-gradient(135deg, var(--accent), #14d4a6); display: flex; align-items: center; justify-content: center; color: white; font-weight: 600; font-size: 0.7rem; }
+        .user-name { font-size: 0.8rem; font-weight: 500; }
+
+        /* Global Progress */
+        .progress-section { padding: 10px 20px; background: var(--surface); border-bottom: 1px solid var(--border-light); flex-shrink: 0; cursor: pointer; transition: var(--transition); }
+        .progress-section:hover { background: var(--surface-alt); }
+        .progress-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+        .progress-label { font-weight: 600; font-size: 0.72rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 1.2px; display: flex; align-items: center; gap: 6px; }
+        .progress-phase-icon { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); animation: phaseBlink 1.5s ease-in-out infinite; }
+        @keyframes phaseBlink { 0%,100% { opacity:1; box-shadow:0 0 6px var(--accent); } 50% { opacity:0.4; box-shadow:0 0 12px var(--accent); } }
+        .progress-value { font-weight: 700; font-size: 0.85rem; color: var(--accent); font-family: 'JetBrains Mono', monospace; }
+        .progress-bar { width: 100%; height: 8px; background: var(--border-light); border-radius: 20px; overflow: hidden; position: relative; }
+        .progress-fill { height: 100%; background: linear-gradient(90deg, var(--accent), #14d4a6, var(--accent-dark)); background-size: 200% 100%; border-radius: 20px; transition: width 0.6s cubic-bezier(0.4,0,0.2,1); animation: progressShimmer 2.5s ease-in-out infinite; position: relative; }
+        @keyframes progressShimmer { 0%,100% { background-position:0% 50%; } 50% { background-position:100% 50%; } }
+        .progress-fill::after { content: ''; position: absolute; top: 0; right: 0; width: 50px; height: 100%; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.5), transparent); animation: sweepLight 1.8s infinite; }
+        @keyframes sweepLight { 0% { transform:translateX(-100%); opacity:0; } 40% { opacity:1; } 100% { transform:translateX(500%); opacity:0; } }
+        .progress-steps { display: flex; justify-content: space-between; margin-top: 10px; }
+        .step-indicator { display: flex; flex-direction: column; align-items: center; gap: 5px; }
+        .step-dot { width: 12px; height: 12px; border-radius: 50%; background: var(--border); border: 2px solid var(--border-light); transition: all 0.4s ease; }
+        .step-dot.active { background: var(--accent); border-color: var(--accent); box-shadow: 0 0 14px rgba(14,168,130,0.5); animation: stepPulse 2s infinite; }
+        @keyframes stepPulse { 0%,100% { box-shadow:0 0 14px rgba(14,168,130,0.5); } 50% { box-shadow:0 0 28px rgba(14,168,130,0.8); } }
+        .step-dot.completed { background: var(--accent-dark); border-color: var(--accent-dark); }
+        .step-label { font-size: 0.65rem; color: var(--text-muted); font-weight: 500; font-family: 'JetBrains Mono', monospace; }
+        .step-label.active { color: var(--accent); font-weight: 600; }
+
+        /* Main Content */
+        .main-content { flex:1; overflow-y:auto; padding:24px 28px; min-height:0; }
+        .page-container { max-width:1200px; margin:0 auto; }
+        .section { margin-bottom:28px; }
+        .section-header { text-align:center; margin-bottom:20px; animation: fadeSlideIn 0.5s ease-out; }
+        @keyframes fadeSlideIn { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } }
+        .section-icon { font-size:2.6rem; color:var(--accent); margin-bottom:8px; animation: floatIcon 3s ease-in-out infinite; }
+        @keyframes floatIcon { 0%,100% { transform:translateY(0); } 50% { transform:translateY(-8px); } }
+        .section-title { font-size:1.6rem; font-weight:700; margin-bottom:4px; }
+        .section-subtitle { font-size:0.88rem; color:var(--text-muted); }
+        .sub-progress-wrap { max-width:500px; margin:0 auto 20px; text-align:center; }
+        .sub-progress-wrap .progress-bar { height:8px; margin:8px 0; }
+        .sub-progress-text { font-family:'JetBrains Mono',monospace; font-weight:600; color:var(--accent); font-size:0.9rem; }
+        .card { background:var(--surface); border-radius:var(--radius-lg); border:1px solid var(--border-light); padding:20px; box-shadow:var(--shadow-xs); transition:var(--transition-smooth); animation: cardAppear 0.5s ease-out both; }
+        .card:hover { box-shadow:var(--shadow-md); }
+        @keyframes cardAppear { from { opacity:0; transform:translateY(16px); } to { opacity:1; transform:translateY(0); } }
+        .card-header { font-weight:600; font-size:0.9rem; margin-bottom:12px; display:flex; align-items:center; justify-content:space-between; }
+        .card-title { display:flex; align-items:center; gap:8px; }
+
+        /* Form & Setup Elements */
+        .form-group { display:flex; flex-direction:column; gap:6px; flex:1; min-width:200px; }
+        .form-label { font-size:0.75rem; font-weight:600; color:var(--text-secondary); text-transform:uppercase; letter-spacing:0.5px; }
+        .form-control { width:100%; padding:10px 14px; border-radius:var(--radius-sm); border:1px solid var(--border); background:var(--surface-alt); color:var(--text); font-family:inherit; font-size:0.85rem; transition:var(--transition); outline:none; }
+        .form-control:focus { border-color:var(--accent); background:var(--surface); box-shadow:0 0 0 3px var(--accent-glow); }
+
+        .maps-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:16px; margin-bottom:20px; }
+        .map-card { background:var(--surface); border-radius:var(--radius-lg); border:1px solid var(--border-light); overflow:hidden; transition:var(--transition-smooth); box-shadow:var(--shadow-xs); animation: cardAppear 0.5s ease-out both; }
+        .map-card:nth-child(1){animation-delay:0.08s}.map-card:nth-child(2){animation-delay:0.16s}.map-card:nth-child(3){animation-delay:0.24s}.map-card:nth-child(4){animation-delay:0.32s}
+        .map-card:hover { box-shadow:var(--shadow-md); transform:translateY(-2px); border-color:var(--accent); }
+        .map-card-header { padding:14px 18px; background:var(--surface-alt); border-bottom:1px solid var(--border-light); display:flex; justify-content:space-between; align-items:center; }
+        .map-card-title { font-weight:600; font-size:0.88rem; display:flex; align-items:center; gap:8px; flex:1; min-width:0; }
+        .map-card-title .map-name-text { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+        /* Map Badges */
+        .map-badge { font-size:0.65rem; padding:2px 8px; border-radius:10px; font-weight:600; white-space:nowrap; flex-shrink:0; }
+        .map-badge.deam { background:var(--accent-light); color:var(--accent-dark); }
+        .map-badge.workflow { background:var(--purple-light); color:var(--purple); }
+        .map-badge.fsm { background:#eef1ff; color:#4f6ef7; }
+        .map-badge.dvm { background:var(--amber-light); color:#a16207; }
+        .map-badge.dvm.loading { background:var(--amber-light); color:#a16207; animation: dvmPulse 1.2s ease-in-out infinite; }
+        @keyframes dvmPulse { 0%,100% { opacity:0.7; } 50% { opacity:1; box-shadow: 0 0 12px rgba(240,169,46,0.4); } }
+
+        .map-card-actions { display:flex; gap:4px; flex-shrink:0; }
+        .icon-btn { width:28px; height:28px; border-radius:var(--radius-sm); border:1px solid var(--border); background:var(--surface); cursor:pointer; display:flex; align-items:center; justify-content:center; transition:var(--transition); color:var(--text-muted); font-size:0.7rem; }
+        .icon-btn:hover { background:var(--accent); color:white; border-color:var(--accent); transform:scale(1.1); }
+        .map-card-body { padding:16px; max-height:200px; overflow:hidden; transition:max-height 0.4s ease, padding 0.4s ease; }
+        .map-card-body.minimized { max-height:0; padding:0 16px; overflow:hidden; }
+        .map-card-body.editing { max-height:none; }
+        .map-card-body.editing .code-block { display:none; }
+        .map-card-body.editing .edit-textarea { display:block; }
+        .edit-textarea { display:none; width:100%; min-height:180px; font-family:'JetBrains Mono',monospace; font-size:0.78rem; color:var(--text-secondary); background:var(--surface-alt); padding:12px; border-radius:var(--radius-sm); border:1px solid var(--accent); outline:none; resize:vertical; line-height:1.5; }
+        .edit-actions { display:none; gap:6px; margin-top:8px; }
+        .map-card-body.editing .edit-actions { display:flex; }
+
+        .code-block { font-family:'JetBrains Mono',monospace; font-size:0.78rem; color:var(--text-secondary); background:var(--surface-alt); padding:12px; border-radius:var(--radius-sm); white-space:pre-wrap; line-height:1.5; max-height:350px; overflow-y:auto; transition: box-shadow 0.4s ease; }
+        .code-block.dark { background:#1a2722; color:#d1fae5; min-height:120px; max-height:350px; overflow-y:auto; }
+
+        .code-block.dvm-loading { background:#1a2722; color:var(--amber); border:1px dashed var(--amber); display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:140px; gap:12px; }
+        .code-block.dvm-loading .loader-spinner { width:32px; height:32px; border:3px solid rgba(240,169,46,0.15); border-top-color:var(--amber); border-radius:50%; animation:spin 1s linear infinite; }
+        @keyframes spin { to { transform:rotate(360deg); } }
+
+        /* Fullscreen Overlay */
+        .fullscreen-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:500; display:none; align-items:center; justify-content:center; backdrop-filter:blur(6px); animation:fadeIn 0.2s ease; }
+        .fullscreen-overlay.show { display:flex; }
+        @keyframes fadeIn { from{opacity:0} to{opacity:1} }
+        .fullscreen-modal { background:var(--surface); border-radius:var(--radius-xl); width:92vw; height:90vh; max-width:1400px; display:flex; flex-direction:column; box-shadow:0 30px 80px rgba(0,0,0,0.2); animation:modalSlideUp 0.35s cubic-bezier(0.22,1,0.36,1); }
+        @keyframes modalSlideUp { from{transform:translateY(40px) scale(0.96);opacity:0} to{transform:translateY(0) scale(1);opacity:1} }
+        .fullscreen-header { padding:18px 24px; border-bottom:1px solid var(--border-light); display:flex; align-items:center; justify-content:space-between; flex-shrink:0; }
+        .fullscreen-title { font-weight:700; font-size:1.1rem; display:flex; align-items:center; gap:10px; }
+        .fullscreen-actions { display:flex; gap:8px; }
+        .fullscreen-close { width:36px; height:36px; border-radius:50%; border:none; background:var(--surface-hover); cursor:pointer; font-size:1.1rem; transition:var(--transition); display:flex; align-items:center; justify-content:center; color:var(--text-secondary); }
+        .fullscreen-close:hover { background:#fef0ed; color:#ef4444; }
+        .fullscreen-body { flex:1; overflow-y:auto; padding:24px; }
+        .fullscreen-body .code-block { font-size:0.85rem; max-height:none; height:auto; min-height:300px; }
+
+        .btn { padding:10px 22px; border-radius:var(--radius-sm); font-weight:600; font-size:0.88rem; cursor:pointer; transition:var(--transition-bounce); border:none; display:inline-flex; align-items:center; gap:7px; text-decoration:none; position:relative; overflow:hidden; white-space:nowrap; }
+        .btn::after { content:''; position:absolute; inset:0; background:linear-gradient(45deg,transparent,rgba(255,255,255,0.2),transparent); transform:translateX(-100%); transition:transform 0.6s ease; }
+        .btn:hover::after { transform:translateX(100%); }
+        .btn-primary { background:var(--accent); color:white; box-shadow:0 4px 12px rgba(14,168,130,0.25); }
+        .btn-primary:hover { background:var(--accent-dark); transform:translateY(-2px); box-shadow:0 8px 25px rgba(14,168,130,0.4); }
+        .btn-primary:disabled { opacity:0.5; cursor:not-allowed; transform:none!important; box-shadow:none; }
+        .btn-outline { background:var(--surface); border:1px solid var(--border); color:var(--text); }
+        .btn-outline:hover { border-color:var(--accent); color:var(--accent); transform:translateY(-1px); box-shadow:var(--shadow); }
+        .btn-sm { padding:6px 14px; font-size:0.75rem; }
+        .button-row { display:flex; gap:10px; justify-content:center; flex-wrap:wrap; margin-top:20px; }
+        .divider { text-align:center; margin:28px 0 20px; position:relative; }
+        .divider::before { content:''; position:absolute; top:50%; left:0; right:0; height:1px; background:var(--border); }
+        .divider span { background:var(--bg); padding:0 16px; position:relative; font-weight:600; font-size:0.8rem; color:var(--text-muted); display:inline-flex; align-items:center; gap:6px; }
+        .arrow-icon { animation:arrowBounce 1.5s infinite; color:var(--accent); }
+        @keyframes arrowBounce { 0%,100% { transform:translateY(0); } 50% { transform:translateY(6px); } }
+
+        .toast { position:fixed; bottom:24px; left:50%; transform:translateX(-50%); background:#1a1d28; color:white; padding:10px 20px; border-radius:24px; font-size:0.8rem; font-weight:500; z-index:10000; opacity:0; pointer-events:none; transition:opacity 0.3s,transform 0.4s cubic-bezier(0.34,1.56,0.64,1); box-shadow:0 10px 40px rgba(0,0,0,0.25); }
+        .toast.show { opacity:1; transform:translateX(-50%) translateY(-6px); }
+        .toast.error { background:#ef4444; }
+        ::-webkit-scrollbar { width:6px; }
+        ::-webkit-scrollbar-track { background:transparent; }
+        ::-webkit-scrollbar-thumb { background:var(--border); border-radius:3px; }
+        @media (max-width:768px) { .maps-grid{grid-template-columns:1fr} .fullscreen-modal{width:96vw;height:94vh} }
+    </style>
+</head>
+<body>
+<div class="cursor" id="cursor"></div>
+<div class="cursor-dot" id="cursorDot"></div>
+<div class="cursor-trail" id="cursorTrail"></div>
+<canvas id="rippleCanvas"></canvas>
+<div class="particles-bg" id="particlesBg"></div>
+
+<!-- Fullscreen Maximize Overlay -->
+<div class="fullscreen-overlay" id="fullscreenOverlay">
+    <div class="fullscreen-modal">
+        <div class="fullscreen-header">
+            <div class="fullscreen-title" id="fullscreenTitle"><span>📄</span> Map Details</div>
+            <div class="fullscreen-actions">
+                <button class="icon-btn" onclick="editInFullscreen()" title="Edit"><i class="fas fa-edit"></i></button>
+                <button class="icon-btn" onclick="saveFullscreenEdit()" title="Save" id="fullscreenSaveBtn" style="display:none;"><i class="fas fa-save"></i></button>
+                <button class="icon-btn" onclick="copyFullscreenContent()" title="Copy"><i class="fas fa-copy"></i></button>
+                <button class="icon-btn" onclick="saveFullscreenContent()" title="Download"><i class="fas fa-download"></i></button>
+                <button class="fullscreen-close" onclick="closeFullscreen()"><i class="fas fa-times"></i></button>
+            </div>
+        </div>
+        <div class="fullscreen-body" id="fullscreenBody">
+            <div class="code-block" id="fullscreenCodeBlock">Loading...</div>
+        </div>
+    </div>
+</div>
+
+<div class="app">
+    <nav class="navbar">
+        <a href="index.html" class="navbar-brand"><div class="navbar-logo">P</div><span class="navbar-name">PahAl</span></a>
+        <div class="navbar-nav">
+            <a href="index.html" class="nav-link"><i class="fas fa-grid-2 nav-icon"></i><span>Dashboard</span></a>
+            <a href="ganga.html" class="nav-link"><i class="fas fa-chart-line nav-icon"></i><span>Analytics</span></a>
+            <a href="kaveri.html" class="nav-link active"><i class="fas fa-code nav-icon"></i><span>Maps & Code</span></a>
+            <a href="yamuna.html" class="nav-link"><i class="fas fa-flask nav-icon"></i><span>Testing</span></a>
+            <a href="sangam.html" class="nav-link"><i class="fas fa-rocket nav-icon"></i><span>Deploy</span></a>
+            <a href="#" class="nav-link"><i class="fas fa-box-archive nav-icon"></i><span>Assets</span></a>
+            <a href="chatAgent.html" class="nav-link"><i class="fas fa-message-smile nav-icon"></i><span>AI Agent</span></a>
+        </div>
+        <div class="navbar-right">
+            <div class="workspace-btn" id="workspaceBtn"><span class="workspace-dot"></span><span id="workspaceName">Project Kaveri</span><i class="fas fa-chevron-down" style="font-size:0.6rem;"></i></div>
+            <div class="user-btn" id="userBtn"><div class="user-avatar">AK</div><span class="user-name">Asif Azmi</span></div>
+        </div>
+    </nav>
+
+    <div class="progress-section" id="progressSection">
+        <div class="progress-header"><span class="progress-label"><span class="progress-phase-icon"></span><span id="globalPhaseLabel">Initializing</span></span><span class="progress-value" id="globalProgressPercent">0%</span></div>
+        <div class="progress-bar"><div class="progress-fill" id="globalProgressFill" style="width:0%;"></div></div>
+        <div class="progress-steps">
+            <div class="step-indicator"><div class="step-dot" id="gstep1"></div><div class="step-label">Upload</div></div>
+            <div class="step-indicator"><div class="step-dot active" id="gstep2"></div><div class="step-label active">Maps</div></div>
+            <div class="step-indicator"><div class="step-dot" id="gstep3"></div><div class="step-label">Code</div></div>
+            <div class="step-indicator"><div class="step-dot" id="gstep4"></div><div class="step-label">Test</div></div>
+            <div class="step-indicator"><div class="step-dot" id="gstep5"></div><div class="step-label">Deploy</div></div>
+        </div>
+    </div>
+
+    <div class="main-content">
+        <div class="page-container">
+            <div class="section" id="mapsSection">
+                <div class="section-header">
+                    <div class="section-icon"><i class="fas fa-diagram-project"></i></div>
+                    <h2 class="section-title">Configuration Maps & DVM</h2>
+                    <p class="section-subtitle">Generating DEAM, Workflow Maps, FSM & DVM from uploaded TBRD document</p>
+                </div>
+
+                <div class="sub-progress-wrap"><div class="progress-bar"><div class="progress-fill" id="mapProgressFill" style="width:0%;"></div></div><p class="sub-progress-text" id="mapProgressText">Waiting for file...</p></div>
+                <div class="maps-grid" id="mapsGrid">
+                    <div class="map-card" style="grid-column:1/-1;text-align:center;padding:30px;">
+                        <div style="font-size:1rem;color:var(--accent);"><i class="fas fa-spinner fa-spin"></i> Loading document...</div>
+                    </div>
+                </div>
+
+                <!-- Repository Setup UI -->
+                <div class="card" id="repoSetupCard" style="display:none; margin-bottom: 20px;">
+                    <div class="card-header">
+                        <div class="card-title"><i class="fas fa-code-branch" style="color:var(--accent);"></i> Repository & Workspace Configuration</div>
+                    </div>
+                    <div style="display:flex; gap:16px; flex-wrap:wrap; padding: 4px 0;">
+                        <div class="form-group">
+                            <label class="form-label">Target Repository</label>
+                            <select id="repoSelect" class="form-control">
+                                <option value="application-interface">application-interface (GitHub)</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Base Branch</label>
+                            <select id="baseBranchSelect" class="form-control">
+                                <option value="">Loading branches...</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">New Branch Name</label>
+                            <input type="text" id="newBranchInput" class="form-control" placeholder="e.g. feature/order-api">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Service Name (Optional)</label>
+                            <input type="text" id="serviceNameInput" class="form-control" placeholder="e.g. order-service">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">TBRD YAML (Required for code)</label>
+                            <input type="file" id="tbrdYamlInput" class="form-control" accept=".yaml,.yml" style="padding: 7px 14px;">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="button-row" id="mapsButtons">
+                    <button class="btn btn-outline" onclick="window.location.href='index.html'"><i class="fas fa-arrow-left"></i> Back to Dashboard</button>
+                    <button class="btn btn-outline" id="saveAllMapsBtn" onclick="saveAllMaps()" disabled><i class="fas fa-download"></i> Save All Maps (ZIP)</button>
+                    <button class="btn btn-primary" id="proceedToCodeBtn" disabled><i class="fas fa-arrow-right"></i> Proceed to Code Generation</button>
+                </div>
+            </div>
+
+            <div class="divider" id="sectionDivider" style="display:none;"><span><i class="fas fa-arrow-down arrow-icon"></i> Sequential Flow <i class="fas fa-arrow-down arrow-icon"></i></span></div>
+
+            <div class="section" id="codeSection" style="display:none;">
+                <div class="section-header"><div class="section-icon"><i class="fas fa-code"></i></div><h2 class="section-title">Code Synthesis</h2><p class="section-subtitle">Streaming production-ready microservice code from configuration maps</p></div>
+                <div class="sub-progress-wrap"><div class="progress-bar"><div class="progress-fill" id="codeProgressFill" style="width:0%;"></div></div><p class="sub-progress-text" id="codeProgressText">0%</p></div>
+                <div class="card"><div class="card-header"><div class="card-title"><i class="fas fa-file-code" style="color:var(--accent);"></i> Generated Microservice Methods</div><div style="display:flex;gap:4px;"><button class="icon-btn" onclick="copyCode()"><i class="fas fa-copy"></i></button><button class="icon-btn" onclick="saveCode()"><i class="fas fa-save"></i></button></div></div><div class="code-block dark" id="generatedCode">// Waiting for map generation to complete...</div></div>
+                <div class="button-row"><button class="btn btn-outline" onclick="window.location.href='index.html'"><i class="fas fa-arrow-left"></i> Back</button><button class="btn btn-primary" id="proceedToTestBtn" disabled><i class="fas fa-arrow-right"></i> Proceed to Sangam for deployment</button></div>
+            </div>
+        </div>
+    </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+    console.log("🚀 KAVERI.HTML SCRIPT LOADED - STREAMING MICROSERVICE API ACTIVATED");
+
+    // ============================================================
+    // CONFIG & STATE
+    // ============================================================
+    const API_BASE_URL = 'http://localhost:8080/api';
+    let generatedMaps = [];
+    let mapsGenerated = false;
+    let currentSubmodulePath = "";
+    let currentServiceName = "";
+
+    // Fullscreen state
+    let fullscreenMapIndex = -1, editingIndex = -1, originalContent = '';
+    let isFullscreenEditing = false;
+
+    // ============================================================
+    // MOUSE & VISUAL EFFECTS
+    // ============================================================
+    const cursor = document.getElementById('cursor'), cursorDot = document.getElementById('cursorDot'), cursorTrail = document.getElementById('cursorTrail');
+    let mouseX=0, mouseY=0, cursorX=0, cursorY=0, trailX=0, trailY=0;
+    document.addEventListener('mousemove',(e)=>{mouseX=e.clientX;mouseY=e.clientY;cursorDot.style.left=mouseX+'px';cursorDot.style.top=mouseY+'px';});
+    document.querySelectorAll('a,button,.btn,.nav-link,.workspace-btn,.user-btn,input,textarea,select,.map-card,.card,.icon-btn,.progress-section,.fullscreen-overlay,.fullscreen-close').forEach(el=>{el.addEventListener('mouseenter',()=>cursor.classList.add('hover'));el.addEventListener('mouseleave',()=>cursor.classList.remove('hover'));});
+    document.addEventListener('mousedown',()=>cursor.classList.add('click')); document.addEventListener('mouseup',()=>cursor.classList.remove('click'));
+    (function animateCursor(){cursorX+=(mouseX-cursorX)*0.1;cursorY+=(mouseY-cursorY)*0.1;trailX+=(mouseX-trailX)*0.04;trailY+=(mouseY-trailY)*0.04;cursor.style.left=cursorX+'px';cursor.style.top=cursorY+'px';cursorTrail.style.left=trailX+'px';cursorTrail.style.top=trailY+'px';requestAnimationFrame(animateCursor);})();
+
+    const canvas=document.getElementById('rippleCanvas'),ctx=canvas.getContext('2d');
+    let ripples=[],rippleParticles=[];
+    function resizeCanvas(){canvas.width=window.innerWidth;canvas.height=window.innerHeight;}
+    resizeCanvas();window.addEventListener('resize',resizeCanvas);
+    document.addEventListener('click',(e)=>{for(let i=0;i<5;i++)ripples.push({x:e.clientX,y:e.clientY,radius:0,maxRadius:25+i*20,opacity:0.6-i*0.1,speed:2+i*0.8});for(let i=0;i<12;i++){const a=(Math.PI*2/12)*i,v=2+Math.random()*4;rippleParticles.push({x:e.clientX,y:e.clientY,vx:Math.cos(a)*v,vy:Math.sin(a)*v,life:1,size:1+Math.random()*3});}});
+    let lastAutoRipple=0;
+    document.addEventListener('mousemove',(e)=>{const n=Date.now();if(n-lastAutoRipple>150&&(Math.abs(e.movementX)>3||Math.abs(e.movementY)>3)){ripples.push({x:e.clientX,y:e.clientY,radius:0,maxRadius:12,opacity:0.3,speed:1.5});lastAutoRipple=n;}});
+    function drawRipples(){ctx.clearRect(0,0,canvas.width,canvas.height);const g=ctx.createRadialGradient(mouseX,mouseY,0,mouseX,mouseY,22);g.addColorStop(0,'rgba(14,168,130,0.07)');g.addColorStop(1,'transparent');ctx.beginPath();ctx.arc(mouseX,mouseY,22,0,Math.PI*2);ctx.fillStyle=g;ctx.fill();ripples=ripples.filter(r=>{r.radius+=r.speed;r.opacity-=0.02;if(r.opacity>0&&r.radius<r.maxRadius){ctx.beginPath();ctx.arc(r.x,r.y,r.radius,0,Math.PI*2);ctx.strokeStyle=`rgba(14,168,130,${r.opacity})`;ctx.lineWidth=1.5;ctx.stroke();return true;}return false;});rippleParticles=rippleParticles.filter(p=>{p.x+=p.vx;p.y+=p.vy;p.life-=0.03;p.vx*=0.96;p.vy*=0.96;if(p.life>0){ctx.beginPath();ctx.arc(p.x,p.y,p.size,0,Math.PI*2);ctx.fillStyle=`rgba(14,168,130,${p.life*0.6})`;ctx.fill();return true;}return false;});requestAnimationFrame(drawRipples);}
+    drawRipples();
+    (function(){const c=document.getElementById('particlesBg'),cols=['#0ea882','#14d4a6','#089170','#7c5cfc','#f0a92e'];for(let i=0;i<20;i++){const p=document.createElement('div');p.className='particle';p.style.width=(Math.random()*5+2)+'px';p.style.height=p.style.width;p.style.left=Math.random()*100+'%';p.style.background=cols[Math.floor(Math.random()*cols.length)];p.style.animationDelay=Math.random()*12+'s';p.style.animationDuration=(Math.random()*10+8)+'s';c.appendChild(p);}})();
+
+    // ============================================================
+    // TOAST
+    // ============================================================
+    function showToast(msg, isError) {
+        const t = document.getElementById('toast');
+        t.textContent = msg;
+        t.classList.add('show');
+        if (isError) t.classList.add('error');
+        else t.classList.remove('error');
+        clearTimeout(t._timeout);
+        t._timeout = setTimeout(() => { t.classList.remove('show','error'); }, 3000);
+    }
+
+    // ============================================================
+    // REPOSITORY & BRANCH SELECTION
+    // ============================================================
+    async function fetchBranches() {
+        try {
+            const res = await fetch(`${API_BASE_URL}/repo/branches`);
+            if (res.ok) {
+                const branches = await res.json();
+                const select = document.getElementById('baseBranchSelect');
+                select.innerHTML = '<option value="">-- Select Base Branch --</option>' +
+                    branches.map(b => `<option value="${b}">${b}</option>`).join('');
+            } else {
+                showToast('⚠️ Failed to load branches', true);
+            }
+        } catch (e) {
+            console.error('Fetch branches error:', e);
+            showToast('⚠️ Error connecting to git repo', true);
+        }
+    }
+
+    function validateRepoForm() {
+        const base = document.getElementById('baseBranchSelect').value;
+        const newBranch = document.getElementById('newBranchInput').value.trim();
+        const btn = document.getElementById('proceedToCodeBtn');
+
+        if (mapsGenerated && base !== "" && newBranch !== "") {
+            btn.disabled = false;
+        } else {
+            btn.disabled = true;
+        }
+    }
+
+    document.getElementById('baseBranchSelect').addEventListener('change', validateRepoForm);
+    document.getElementById('newBranchInput').addEventListener('input', validateRepoForm);
+    document.getElementById('serviceNameInput').addEventListener('input', validateRepoForm);
+
+
+    // ============================================================
+    // FULLSCREEN CONTROLS
+    // ============================================================
+    const fullscreenOverlay=document.getElementById('fullscreenOverlay');
+    const fullscreenTitle=document.getElementById('fullscreenTitle');
+    const fullscreenCodeBlock=document.getElementById('fullscreenCodeBlock');
+    const fullscreenSaveBtn=document.getElementById('fullscreenSaveBtn');
+
+    function openFullscreen(index){
+        if(index<0||index>=generatedMaps.length)return;
+        fullscreenMapIndex=index; isFullscreenEditing=false; fullscreenSaveBtn.style.display='none';
+        const map=generatedMaps[index];
+        const icons={deam:'📐',workflow:'🔄',fsm:'🧠',dvm:'🤖'};
+        fullscreenTitle.innerHTML=`<span>${icons[map.type]||'📄'}</span> ${map.title} <span class="map-badge ${map.type}" style="font-size:0.7rem;padding:3px 10px;">${map.type.toUpperCase()}</span>`;
+        fullscreenCodeBlock.textContent=map.content; fullscreenCodeBlock.contentEditable='false'; fullscreenCodeBlock.style.border='none'; fullscreenCodeBlock.style.outline='none'; fullscreenCodeBlock.style.background='var(--surface-alt)';
+        fullscreenOverlay.classList.add('show'); document.body.style.overflow='hidden';
+    }
+    function closeFullscreen(){
+        fullscreenOverlay.classList.remove('show'); fullscreenMapIndex=-1; isFullscreenEditing=false; fullscreenSaveBtn.style.display='none';
+        fullscreenCodeBlock.contentEditable='false'; fullscreenCodeBlock.style.border='none'; fullscreenCodeBlock.style.outline='none'; fullscreenCodeBlock.style.background='var(--surface-alt)';
+        document.body.style.overflow='';
+    }
+    function editInFullscreen(){
+        if(fullscreenMapIndex<0)return; isFullscreenEditing=true;
+        fullscreenCodeBlock.contentEditable='true'; fullscreenCodeBlock.style.border='1px solid var(--accent)'; fullscreenCodeBlock.style.outline='none'; fullscreenCodeBlock.style.background='#fffff9';
+        fullscreenCodeBlock.focus(); fullscreenSaveBtn.style.display='flex'; showToast('✏️ Editing enabled - click save icon when done');
+    }
+    function saveFullscreenEdit(){
+        if(fullscreenMapIndex<0||!isFullscreenEditing)return;
+        const newContent=fullscreenCodeBlock.textContent; generatedMaps[fullscreenMapIndex].content=newContent;
+        const cardCodeBlock=document.querySelector(`#mapBody${fullscreenMapIndex} .code-block`); if(cardCodeBlock)cardCodeBlock.textContent=newContent;
+        isFullscreenEditing=false; fullscreenCodeBlock.contentEditable='false'; fullscreenCodeBlock.style.border='none'; fullscreenCodeBlock.style.outline='none'; fullscreenCodeBlock.style.background='var(--surface-alt)';
+        fullscreenSaveBtn.style.display='none'; showToast('💾 Map saved!');
+    }
+    function copyFullscreenContent(){if(fullscreenMapIndex>=0)navigator.clipboard.writeText(generatedMaps[fullscreenMapIndex].content).then(()=>showToast('📋 Content copied!'));}
+    async function saveFullscreenContent(){
+        if(fullscreenMapIndex<0)return;const map=generatedMaps[fullscreenMapIndex];
+        try{const h=await window.showSaveFilePicker({suggestedName:map.title+'.json',types:[{description:'JSON',accept:{'application/json':['.json']}}]});const w=await h.createWritable();await w.write(map.content);await w.close();showToast('💾 Saved!');}
+        catch(err){if(err.name==='AbortError')return;const b=new Blob([map.content],{type:'application/json'}),u=URL.createObjectURL(b),a=document.createElement('a');a.href=u;a.download=map.title+'.json';a.click();URL.revokeObjectURL(u);showToast('💾 Downloaded!');}
+    }
+    fullscreenOverlay.addEventListener('click',(e)=>{if(e.target===fullscreenOverlay)closeFullscreen();});
+    document.addEventListener('keydown',(e)=>{
+        if(e.key==='Escape'&&fullscreenOverlay.classList.contains('show')){if(isFullscreenEditing&&!confirm('Unsaved changes. Close anyway?'))return;closeFullscreen();}
+        if((e.ctrlKey||e.metaKey)&&e.key==='s'&&fullscreenOverlay.classList.contains('show')&&isFullscreenEditing){e.preventDefault();saveFullscreenEdit();}
+    });
+
+    function startInlineEdit(index){
+        if(editingIndex>=0)cancelInlineEdit(editingIndex);editingIndex=index;originalContent=generatedMaps[index].content;
+        const body=document.getElementById('mapBody'+index);body.classList.add('editing');
+        const textarea=body.querySelector('.edit-textarea');textarea.value=originalContent;textarea.focus();
+    }
+    function saveInlineEdit(index){
+        const body=document.getElementById('mapBody'+index);const textarea=body.querySelector('.edit-textarea');const newContent=textarea.value;
+        generatedMaps[index].content=newContent;const codeBlock=body.querySelector('.code-block');codeBlock.textContent=newContent;
+        if(fullscreenMapIndex===index)fullscreenCodeBlock.textContent=newContent;
+        body.classList.remove('editing');editingIndex=-1;showToast('✏️ Map updated!');
+    }
+    function cancelInlineEdit(index){
+        const body=document.getElementById('mapBody'+index);generatedMaps[index].content=originalContent;body.classList.remove('editing');editingIndex=-1;
+    }
+
+    // ============================================================
+    // RENDER MAPS
+    // ============================================================
+    function renderMaps() {
+        const grid = document.getElementById('mapsGrid');
+        const icons = { deam: '📐', workflow: '🔄', fsm: '🧠', dvm: '🤖' };
+        const labels = { deam: 'DEAM', workflow: 'Workflow', fsm: 'FSM', dvm: 'DVM' };
+
+        grid.innerHTML = generatedMaps.map((m, i) => {
+            const isDvmLoading = (m.type === 'dvm' && m._loading === true);
+            const badgeClass = isDvmLoading ? 'dvm loading' : m.type;
+            const contentHtml = isDvmLoading
+                ? `<div class="code-block dvm-loading">
+                      <div class="loader-spinner"></div>
+                      <div style="font-weight:600; color:var(--amber);">⏳ Generating DVM Map...</div>
+                      <div style="font-size:0.7rem; color:var(--text-muted);">Waiting for FSM dependency, then triggering API.</div>
+                   </div>`
+                : `<div class="code-block">${m.content}</div>`;
+
+            return `
+            <div class="map-card" style="animation-delay:${i*0.08}s; ${isDvmLoading ? 'border-color:var(--amber);' : ''}">
+                <div class="map-card-header">
+                    <div class="map-card-title"><span>${icons[m.type]||'📄'}</span><span class="map-name-text">${m.title}</span><span class="map-badge ${badgeClass}">${labels[m.type]||m.type}${isDvmLoading ? ' ⏳' : ''}</span></div>
+                    <div class="map-card-actions">
+                        <button class="icon-btn" onclick="toggleMinimize(${i})" title="Minimize"><i class="fas fa-minimize"></i></button>
+                        <button class="icon-btn" onclick="openFullscreen(${i})" title="Maximize"><i class="fas fa-maximize"></i></button>
+                        <button class="icon-btn" onclick="copyMap(${i})" title="Copy"><i class="fas fa-copy"></i></button>
+                        <button class="icon-btn" onclick="saveMap(${i})" title="Save"><i class="fas fa-save"></i></button>
+                        ${!isDvmLoading ? `<button class="icon-btn" onclick="startInlineEdit(${i})" title="Edit"><i class="fas fa-edit"></i></button>` : ''}
+                    </div>
+                </div>
+                <div class="map-card-body" id="mapBody${i}">
+                    ${contentHtml}
+                    <textarea class="edit-textarea" spellcheck="false"></textarea>
+                    <div class="edit-actions">
+                        <button class="btn btn-primary btn-sm" onclick="saveInlineEdit(${i})"><i class="fas fa-check"></i> Save</button>
+                        <button class="btn btn-outline btn-sm" onclick="cancelInlineEdit(${i})"><i class="fas fa-times"></i> Cancel</button>
+                    </div>
+                </div>
+            </div>`;
+        }).join('');
+    }
+
+    // ============================================================
+    // EXPLICIT TRIGGER FOR DVM API
+    // ============================================================
+    async function triggerDvmGeneration(fsmStringData, dvmIndexTarget) {
+        console.log("--> Firing DVM generation API request");
+        try {
+            const payload = {
+                fsm: fsmStringData,
+                model: 'gemini-1.5-pro'
+            };
+
+            const res = await fetch(`${API_BASE_URL}/agent/generate-dvm`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (!res.ok) throw new Error(`Backend error (${res.status})`);
+            const fullResponse = await res.json();
+
+            let extractedDvm = fullResponse;
+            if (fullResponse.response && fullResponse.response.dvm) {
+                extractedDvm = fullResponse.response.dvm;
+            } else if (fullResponse.response_payload && fullResponse.response_payload.dvm) {
+                extractedDvm = fullResponse.response_payload.dvm;
+            } else if (fullResponse.dvm) {
+                extractedDvm = fullResponse.dvm;
+            }
+
+            const mapTitle = extractedDvm['dashboard-name'] || extractedDvm.title || 'DVM_Generated_Map';
+
+            generatedMaps[dvmIndexTarget] = {
+                title: mapTitle,
+                type: 'dvm',
+                content: JSON.stringify(extractedDvm, null, 2),
+                _loading: false
+            };
+
+            renderMaps();
+            showToast('✅ DVM Map successfully generated!');
+            document.getElementById('mapProgressText').textContent = 'DVM map complete';
+            document.getElementById('mapProgressFill').style.width = '100%';
+
+        } catch (err) {
+            console.error('DVM Generation Error:', err);
+            generatedMaps[dvmIndexTarget] = {
+                title: 'DVM Generation Failed',
+                type: 'dvm',
+                content: `// The API /agent/generate-dvm failed.\n// Error: ${err.message}`,
+                _loading: false
+            };
+            renderMaps();
+            showToast('⚠️ DVM map generation failed', true);
+            document.getElementById('mapProgressText').textContent = 'DVM step failed';
+            document.getElementById('mapProgressFill').style.width = '100%';
+        }
+    }
+
+    // ============================================================
+    // MAIN PROCESSING PIPELINE
+    // ============================================================
+    async function processFile(file) {
+        const grid = document.getElementById('mapsGrid');
+        const mf = document.getElementById('mapProgressFill');
+        const mt = document.getElementById('mapProgressText');
+
+        grid.innerHTML = '<div class="map-card" style="grid-column:1/-1;text-align:center;padding:30px;"><div style="font-size:1rem;color:var(--accent);"><i class="fas fa-spinner fa-spin"></i> Calling process-docx API...</div></div>';
+        mf.style.width = '15%'; mt.textContent = 'Uploading...';
+        updateGlobalProgress(20, 'Uploading TBRD', 2);
+
+        const fd = new FormData();
+        fd.append('file', file);
+
+        try {
+            mf.style.width = '30%'; mt.textContent = 'Processing...';
+            const res = await fetch(`${API_BASE_URL}/tbrd/process-docx`, { method: 'POST', body: fd });
+            if (!res.ok) throw new Error(`Backend error (${res.status})`);
+            const data = await res.json();
+
+            mf.style.width = '60%'; mt.textContent = 'Parsing maps...';
+            generatedMaps = [];
+
+            if (data.DEAMs && Array.isArray(data.DEAMs)) {
+                data.DEAMs.forEach(d => generatedMaps.push({ title: d.entity || 'DEAM_Entity', type: 'deam', content: JSON.stringify(d, null, 2), _loading: false }));
+            }
+            if (data.WFMs && Array.isArray(data.WFMs)) {
+                data.WFMs.forEach(w => generatedMaps.push({ title: w.workflowName || 'Workflow_Map', type: 'workflow', content: JSON.stringify(w, null, 2), _loading: false }));
+            }
+
+            let fsmData = data.FSM || data.fsm || data;
+            generatedMaps.push({
+                title: 'FSM_' + (fsmData.document_name || 'Structure'),
+                type: 'fsm',
+                content: JSON.stringify(fsmData, null, 2),
+                _loading: false
+            });
+
+            const stringifiedData = JSON.stringify(data);
+
+            let hasFrontend = false;
+            if (fsmData && Array.isArray(fsmData.sections)) {
+                hasFrontend = fsmData.sections.some(section => {
+                    const title = (section.section_title || '').toLowerCase();
+                    return title.includes('tbrd-05') && title.includes('frontend');
+                });
+            }
+
+            let dvmIndex = -1;
+            if (hasFrontend) {
+                dvmIndex = generatedMaps.length;
+                generatedMaps.push({
+                    title: 'DVM Map (Pending FSM)',
+                    type: 'dvm',
+                    content: '',
+                    _loading: true
+                });
+            }
+
+            renderMaps();
+
+            // ============================================================
+            // CHECK FOR TBRD-03 & dataEnrichment TO INVOKE DEAM READ CONTROLLER
+            // ============================================================
+            const hasDataEnrichment = stringifiedData.includes('tbrd-03') || stringifiedData.includes('dataEnrichment');
+            if (hasDataEnrichment) {
+                try {
+                    showToast('🔄 Synchronizing DEAM Reads via API...');
+                    const deamReadRes = await fetch(`${API_BASE_URL}/deam-reads/process`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-TENANT-ID': 'tenantA'
+                        },
+                        body: stringifiedData
+                    });
+
+                    if (deamReadRes.ok) {
+                        const deamReadData = await deamReadRes.json();
+                        generatedMaps.push({
+                            title: 'DEAM_Reads_Sync_Result',
+                            type: 'workflow',
+                            content: JSON.stringify(deamReadData, null, 2),
+                            _loading: false
+                        });
+                        renderMaps();
+                        showToast('✅ DEAM Reads successfully processed!');
+                    } else {
+                        console.warn('DEAM reads call returned non-200 status');
+                    }
+                } catch (err) {
+                    console.error('DEAM Reads processing error:', err);
+                    showToast('⚠️ DEAM Reads endpoint call failed', true);
+                }
+            }
+
+            mapsGenerated = true;
+            document.getElementById('repoSetupCard').style.display = 'block';
+            document.getElementById('saveAllMapsBtn').disabled = false;
+            fetchBranches();
+            validateRepoForm();
+
+            if (hasFrontend) {
+                mf.style.width = '80%'; mt.textContent = 'Triggering DVM...';
+                showToast('✅ Base maps ready. Initializing DVM LLM Call...');
+
+                setTimeout(() => {
+                    const fsmMapItem = generatedMaps.find(m => m.type === 'fsm');
+                    const fsmStringForPayload = fsmMapItem ? fsmMapItem.content : JSON.stringify(fsmData);
+                    triggerDvmGeneration(fsmStringForPayload, dvmIndex);
+                }, 600);
+            } else {
+                mf.style.width = '100%'; mt.textContent = 'Maps complete';
+                showToast('✅ Maps successfully generated!');
+            }
+
+        } catch (err) {
+            console.error('Process error:', err);
+            mf.style.width = '100%';
+            mt.textContent = 'Fallback to demo';
+            showToast('⚠️ Backend unavailable - loading demo maps', true);
+            loadDemoMaps();
+        }
+    }
+
+    // ============================================================
+    // DEMO MODE (fallback)
+    // ============================================================
+    function loadDemoMaps() {
+        generatedMaps = [
+            { title: 'DEAM_User_Entity', type: 'deam', content: '{"entity":"User","attributesList":[{"name":"uuid","type":"string","businessKey":true},{"name":"email","type":"string"}]}', _loading: false },
+            { title: 'DEAM_Order_Entity', type: 'deam', content: '{"entity":"Order","attributesList":[{"name":"order_id","type":"string","businessKey":true}]}', _loading: false },
+            { title: 'WORKFLOW_OrderProcessing', type: 'workflow', content: '{"workflowName":"OrderProcessing","subWorkflowExecution":[{"entityName":"Order","sourceType":"API_SOURCE"}]}', _loading: false },
+            { title: 'FSM_StateMachine', type: 'fsm', content: '{"model":"TBRD_FSM","states":["INIT","VALIDATION","PROCESSING","COMPLETE"]}', _loading: false }
+        ];
+
+        renderMaps();
+
+        mapsGenerated = true;
+        document.getElementById('repoSetupCard').style.display = 'block';
+        document.getElementById('saveAllMapsBtn').disabled = false;
+        fetchBranches();
+        validateRepoForm();
+
+        const mf = document.getElementById('mapProgressFill');
+        const mt = document.getElementById('mapProgressText');
+        if (mf) mf.style.width = '100%';
+        if (mt) mt.textContent = 'Maps complete';
+
+        showToast('📋 Demo maps loaded.');
+    }
+
+    // ============================================================
+    // UTILITY FUNCTIONS
+    // ============================================================
+    window.toggleMinimize = (i) => {
+        const body = document.getElementById('mapBody' + i);
+        if (body) body.classList.toggle('minimized');
+    };
+
+    window.copyMap = (i) => {
+        if (generatedMaps[i] && generatedMaps[i].content) {
+            navigator.clipboard.writeText(generatedMaps[i].content).then(() => showToast('📋 Map copied!'));
+        }
+    };
+
+    window.saveMap = async (i) => {
+        if (!generatedMaps[i]) return;
+        const map = generatedMaps[i];
+        try {
+            const h = await window.showSaveFilePicker({
+                suggestedName: map.title + '.json',
+                types: [{ description: 'JSON', accept: { 'application/json': ['.json'] } }]
+            });
+            const w = await h.createWritable();
+            await w.write(map.content);
+            await w.close();
+            showToast('💾 Map saved!');
+        } catch (err) {
+            if (err.name === 'AbortError') return;
+            const b = new Blob([map.content], { type: 'application/json' });
+            const u = URL.createObjectURL(b);
+            const a = document.createElement('a');
+            a.href = u;
+            a.download = map.title + '.json';
+            a.click();
+            URL.revokeObjectURL(u);
+            showToast('💾 Map downloaded!');
+        }
+    };
+
+    window.saveAllMaps = async () => {
+        if (!generatedMaps || generatedMaps.length === 0) {
+            showToast('⚠️ No maps available to save', true);
+            return;
+        }
+
+        if (typeof JSZip === 'undefined') {
+            showToast('⚠️ ZIP library failed to load. Please refresh.', true);
+            return;
+        }
+
+        try {
+            showToast('📦 Zipping files...');
+            const zip = new JSZip();
+            const folder = zip.folder("PahAl_Configuration_Maps");
+
+            generatedMaps.forEach((m, index) => {
+                let safeTitle = m.title.replace(/[^a-z0-9]/gi, '_');
+                if (!safeTitle) safeTitle = `map_${index}`;
+
+                let finalContent = m.content;
+                try {
+                    finalContent = JSON.stringify(JSON.parse(m.content), null, 2);
+                } catch (e) {}
+
+                folder.file(`${safeTitle}.json`, finalContent);
+            });
+
+            const zipBlob = await zip.generateAsync({ type: "blob" });
+
+            try {
+                const handle = await window.showSaveFilePicker({
+                    suggestedName: 'PahAl_Configuration_Maps.zip',
+                    types: [{ description: 'ZIP Archive', accept: { 'application/zip': ['.zip'] } }]
+                });
+                const writable = await handle.createWritable();
+                await writable.write(zipBlob);
+                await writable.close();
+                showToast('💾 All maps zipped and saved!');
+            } catch (err) {
+                if (err.name === 'AbortError') return;
+                const u = URL.createObjectURL(zipBlob);
+                const a = document.createElement('a');
+                a.href = u;
+                a.download = 'PahAl_Configuration_Maps.zip';
+                a.click();
+                URL.revokeObjectURL(u);
+                showToast('💾 All maps downloaded as ZIP!');
+            }
+        } catch (err) {
+            console.error('Save all maps error:', err);
+            showToast('⚠️ Failed to package maps', true);
+        }
+    };
+
+    window.copyCode = () => {
+        const code = document.getElementById('generatedCode').textContent;
+        navigator.clipboard.writeText(code).then(() => showToast('📋 Code copied!'));
+    };
+
+    window.saveCode = async () => {
+        const code = document.getElementById('generatedCode').textContent;
+
+        // Safety check to ensure the workspace was actually set up
+        if (!currentSubmodulePath || !currentServiceName) {
+            showToast('⚠️ Workspace not initialized. Generate code first.', true);
+            return;
+        }
+
+        try {
+            showToast('💾 Saving microservice to workspace...', false);
+
+            const res = await fetch(`${API_BASE_URL}/stream/save-code`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    submodulePath: currentSubmodulePath,
+                    serviceName: currentServiceName,
+                    code: code
+                })
+            });
+
+            if (!res.ok) throw new Error(`Backend error (${res.status})`);
+
+            showToast('✅ Service successfully saved directly to cloned repository!');
+
+        } catch (err) {
+            console.error('Save to workspace error:', err);
+            showToast('⚠️ Failed to save service to workspace', true);
+        }
+    };
+
+    function updateGlobalProgress(pct, phase, step) {
+        document.getElementById('globalProgressFill').style.width = pct + '%';
+        document.getElementById('globalProgressPercent').textContent = pct + '%';
+        document.getElementById('globalPhaseLabel').textContent = phase;
+        for (let i = 1; i <= 5; i++) {
+            const d = document.getElementById('gstep' + i);
+            const l = d ? d.parentElement.querySelector('.step-label') : null;
+            if (d) {
+                d.classList.remove('active', 'completed');
+                if (i < step) d.classList.add('completed');
+                if (i === step) { d.classList.add('active'); if (l) l.classList.add('active'); }
+            }
+        }
+    }
+
+    // ============================================================
+    // STREAMING SSE PARSER
+    // ============================================================
+    function processSseEvent(eventType, rawData, progressFill, progressText, codeBlock) {
+        let cleanData = rawData.replace(/\n$/, '').replace(/\\n/g, "\n");
+
+        if (eventType === "progress") {
+            const percent = parseInt(cleanData, 10) || 0;
+            progressFill.style.width = percent + '%';
+            progressText.textContent = percent + '%';
+        } else if (eventType === "method") {
+            codeBlock.textContent += cleanData + "\n\n";
+            codeBlock.scrollTop = codeBlock.scrollHeight;
+            codeBlock.style.boxShadow = "inset 0 0 20px rgba(45,212,191,0.5)";
+            setTimeout(() => codeBlock.style.boxShadow = "none", 500);
+        } else if (eventType === "complete") {
+            codeBlock.textContent = cleanData;
+            progressFill.style.width = '100%';
+            progressText.textContent = '100%';
+            updateGlobalProgress(70, 'Code Complete', 3);
+            document.getElementById('proceedToTestBtn').disabled = false;
+            showToast('💻 Code synthesis complete!');
+        }
+    }
+
+    // ============================================================
+    // TRIGGER REPO SETUP & MICROSERVICE GENERATION
+    // ============================================================
+    document.getElementById('proceedToCodeBtn').addEventListener('click', async () => {
+        if (!mapsGenerated) { showToast('⚠️ Generate maps first!', true); return; }
+
+        const baseBranch = document.getElementById('baseBranchSelect').value;
+        const newBranchName = document.getElementById('newBranchInput').value.trim();
+        const serviceName = document.getElementById('serviceNameInput').value.trim();
+
+        // 1. Grab the YAML file if uploaded
+        const yamlInput = document.getElementById('tbrdYamlInput');
+        let yamlContent = null;
+        if (yamlInput && yamlInput.files.length > 0) {
+            try {
+                yamlContent = await yamlInput.files[0].text();
+                showToast('📄 YAML file loaded successfully!');
+            } catch (err) {
+                showToast('⚠️ Failed to read YAML file', true);
+                return;
+            }
+        } else {
+            showToast('⚠️ Please upload a TBRD YAML file first!', true);
+            return; // Enforce YAML file requirement
+        }
+
+        document.getElementById('repoSetupCard').style.display = 'none';
+        document.getElementById('mapsButtons').style.display = 'none';
+        document.getElementById('sectionDivider').style.display = 'block';
+        document.getElementById('codeSection').style.display = 'block';
+
+        const cb = document.getElementById('generatedCode');
+        const cf = document.getElementById('codeProgressFill');
+        const ct = document.getElementById('codeProgressText');
+
+        cb.textContent = "// 🔄 Setting up repository workspace...\n";
+        updateGlobalProgress(40, 'Workspace Setup', 3);
+        cf.style.width = '2%';
+        ct.textContent = 'Setup';
+
+        try {
+            const setupRes = await fetch(`${API_BASE_URL}/repo/setup`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ baseBranch, newBranchName, serviceName })
+            });
+
+            if (!setupRes.ok) throw new Error(`Backend error (${setupRes.status})`);
+            const setupData = await setupRes.json();
+
+            currentSubmodulePath = setupData.submodulePath;
+            currentServiceName = setupData.serviceName;
+
+            cb.textContent += `// ✅ Repository cloned successfully!\n// 📁 Workspace initialized at: ${setupData.submodulePath}\n\n`;
+            showToast('✅ Workspace configured in cloned_repositories!');
+
+        } catch (err) {
+            console.error('Repository setup failed:', err);
+            cb.textContent += `// ❌ ERROR: Workspace setup failed: ${err.message}\n// Aborting code generation stream.\n`;
+            showToast('⚠️ Repository setup failed', true);
+            cf.style.backgroundColor = 'var(--red)';
+            return;
+        }
+
+        updateGlobalProgress(50, 'Code Generation', 3);
+        cb.textContent += "// 📡 Connection established. Awaiting initial code generation packet...\n\n";
+        cf.style.width = '5%';
+        ct.textContent = '5%';
+
+        try {
+            // 2. Send ONLY the raw YAML text directly
+            const payload = yamlContent;
+
+            const response = await fetch(`${API_BASE_URL}/stream/generate-java-stream`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'text/plain', // Updated content-type
+                    'Accept': 'text/event-stream'
+                },
+                body: payload
+            });
+
+            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+            if (!response.body) throw new Error("ReadableStream not supported by browser.");
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder("utf-8");
+
+            let buffer = "";
+            let currentEvent = null;
+            let currentData = "";
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                buffer += decoder.decode(value, { stream: true });
+                let lines = buffer.split(/\r\n|\n|\r/);
+                buffer = lines.pop();
+
+                for (let line of lines) {
+                    if (line.trim() === "") {
+                        if (currentEvent || currentData) {
+                            processSseEvent(currentEvent || "message", currentData, cf, ct, cb);
+                            currentEvent = null;
+                            currentData = "";
+                        }
+                    } else if (line.startsWith("event:")) {
+                        currentEvent = line.substring(6).trim();
+                    } else if (line.startsWith("data:")) {
+                        currentData += line.substring(5).replace(/^\s/, '') + "\n";
+                    }
+                }
+            }
+
+            if (currentEvent || currentData) {
+                processSseEvent(currentEvent || "message", currentData, cf, ct, cb);
+            }
+
+        } catch (error) {
+            console.error("Streaming failed:", error);
+            cb.textContent += `\n\n// FATAL ERROR: ${error.message}\n// Connection Disrupted. Check Backend Server and CORS.`;
+            showToast('⚠️ Code generation streaming failed', true);
+            cf.style.backgroundColor = 'var(--red)';
+        }
+    });
+
+    document.getElementById('proceedToTestBtn').addEventListener('click', () => {
+        window.location.href = 'sangam.html';
+    });
+
+    document.getElementById('progressSection').addEventListener('click', () => {
+        showToast('📊 Progress: ' + document.getElementById('globalProgressPercent').textContent);
+    });
+
+    // ============================================================
+    // INIT — on load
+    // ============================================================
+    async function init() {
+        updateGlobalProgress(10, 'Initializing', 2);
+        const fileData = sessionStorage.getItem('tbrdFileData');
+        const fileName = sessionStorage.getItem('tbrdFileName');
+
+        if (fileData && fileName) {
+            try {
+                const byteString = atob(fileData.split(',')[1]);
+                const mimeType = fileData.split(',')[0].split(':')[1].split(';')[0];
+                const ab = new ArrayBuffer(byteString.length);
+                const ia = new Uint8Array(ab);
+                for (let i = 0; i < byteString.length; i++) ia[i] = byteString.charCodeAt(i);
+                const blob = new Blob([ab], { type: mimeType });
+                const file = new File([blob], fileName, { type: mimeType });
+                sessionStorage.removeItem('tbrdFileData');
+                sessionStorage.removeItem('tbrdFileName');
+                await processFile(file);
+            } catch (err) {
+                console.error('Failed to process file from session:', err);
+                loadDemoMaps();
+            }
+        } else {
+            console.log('No file in sessionStorage, using demo');
+            loadDemoMaps();
+        }
+    }
+
+    init();
+</script>
+</body>
+</html>

@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PahAl • Adaptive Card Generator</title>
+
+    <!-- Fonts & Icons -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
+    <!-- Highlight.js for Code Highlighting -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+
+    <!-- Microsoft Adaptive Cards SDK -->
+    <script src="https://unpkg.com/adaptivecards/dist/adaptivecards.min.js"></script>
+
+    <style>
+        :root {
+            --bg: #f7f8fc;
+            --surface: #ffffff;
+            --surface-alt: #fafbfd;
+            --surface-hover: #f0f2f8;
+            --text: #11141f;
+            --text-secondary: #4a4f63;
+            --text-muted: #888da8;
+            --border: #e4e7f2;
+            --border-light: #f0f2f8;
+            --blue: #4f6ef7;
+            --blue-dark: #3651d5;
+            --blue-light: #eef1ff;
+            --purple: #7c5cfc;
+            --green: #22c55e;
+            --radius-sm: 8px;
+            --radius: 12px;
+            --radius-lg: 16px;
+            --shadow-sm: 0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.03);
+            --shadow-md: 0 10px 25px rgba(0,0,0,0.08);
+            --transition: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Inter', sans-serif;
+            background: var(--bg); color: var(--text);
+            height: 100vh; display: flex; flex-direction: column;
+            overflow: hidden;
+        }
+
+        /* Navbar Layout */
+        .navbar { display: flex; align-items: center; justify-content: space-between; padding: 0 20px; height: 60px; background: rgba(255,255,255,0.85); backdrop-filter: blur(20px); border-bottom: 1px solid var(--border-light); flex-shrink: 0; }
+        .navbar-brand { display: flex; align-items: center; gap: 8px; text-decoration: none; color: var(--text); font-weight: 700; font-size: 1.15rem; }
+        .navbar-logo { width: 34px; height: 34px; background: linear-gradient(135deg, var(--blue), var(--purple)); border-radius: var(--radius-sm); display: flex; align-items: center; justify-content: center; color: white; font-weight: 900; }
+        .navbar-nav { display: flex; align-items: center; gap: 2px; }
+        .nav-link { padding: 6px 14px; border-radius: var(--radius-sm); font-weight: 500; font-size: 0.82rem; color: var(--text-secondary); text-decoration: none; transition: var(--transition); display: flex; align-items: center; gap: 6px; }
+        .nav-link:hover { background: var(--surface-hover); color: var(--text); }
+        .nav-link.active { background: var(--blue); color: white; }
+
+        /* Main Workspace */
+        .main-content { flex: 1; padding: 20px; overflow-y: auto; display: grid; grid-template-columns: 1fr 1.2fr; gap: 20px; }
+
+        .card { background: var(--surface); border-radius: var(--radius-lg); border: 1px solid var(--border-light); box-shadow: var(--shadow-sm); display: flex; flex-direction: column; overflow: hidden; height: calc(100vh - 100px); transition: all 0.3s ease; }
+
+        /* Fullscreen Expansion for Output */
+        .card.fullscreen {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            width: 100vw; height: 100vh;
+            border-radius: 0;
+            border: none;
+            z-index: 9999;
+            box-shadow: none;
+        }
+
+        .card-header { padding: 12px 18px; border-bottom: 1px solid var(--border-light); font-weight: 600; font-size: 0.9rem; display: flex; justify-content: space-between; align-items: center; background: var(--surface-alt); flex-shrink: 0; }
+        .header-left { display: flex; align-items: center; gap: 12px; }
+        .header-actions { display: flex; align-items: center; gap: 8px; }
+
+        /* Tabs */
+        .tabs { display: flex; background: var(--border-light); border-radius: 8px; padding: 3px; gap: 3px; }
+        .tab-btn { border: none; background: transparent; padding: 5px 12px; font-size: 0.78rem; font-weight: 600; color: var(--text-secondary); border-radius: 6px; cursor: pointer; transition: var(--transition); display: flex; align-items: center; gap: 6px; }
+        .tab-btn.active { background: white; color: var(--blue); box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+
+        /* Buttons */
+        .btn { padding: 7px 14px; border-radius: var(--radius-sm); font-weight: 600; font-size: 0.8rem; cursor: pointer; transition: var(--transition); border: none; display: inline-flex; align-items: center; gap: 6px; justify-content: center; }
+        .btn-primary { background: var(--blue); color: white; box-shadow: 0 4px 12px rgba(79,110,247,0.25); }
+        .btn-primary:hover:not(:disabled) { background: var(--blue-dark); transform: translateY(-1px); }
+        .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; transform: none; box-shadow: none; }
+        .btn-white { background: var(--surface); color: var(--text); border: 1px solid var(--border); }
+        .btn-white:hover { background: var(--surface-hover); border-color: var(--blue); color: var(--blue); }
+        .btn-icon-only { padding: 6px 10px; font-size: 0.85rem; }
+
+        /* Input Editor */
+        .editor-container { flex: 1; display: flex; flex-direction: column; padding: 16px; background: var(--surface); }
+        .editor-textarea { flex: 1; width: 100%; border: 1px dashed var(--border); border-radius: var(--radius-sm); padding: 16px; font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; resize: none; outline: none; transition: border-color 0.3s; background: var(--surface-alt); color: var(--text-secondary); line-height: 1.5; }
+        .editor-textarea:focus { border-color: var(--blue); }
+
+        /* Output View Content */
+        .output-view { flex: 1; display: none; overflow: hidden; position: relative; background: #eef1f6; }
+        .output-view.active { display: flex; }
+
+        /* Visual Preview Area */
+        .preview-scroll-wrapper { width: 100%; height: 100%; overflow: auto; padding: 28px; display: flex; justify-content: center; align-items: flex-start; }
+        .ac-card-wrapper {
+            background: #ffffff;
+            padding: 28px 32px;
+            border-radius: var(--radius);
+            box-shadow: var(--shadow-md);
+            width: 100%;
+            max-width: 900px; /* Increased from 500px to accommodate wide tables */
+            min-height: fit-content;
+            transition: max-width 0.3s ease;
+        }
+
+        .fullscreen .ac-card-wrapper {
+            max-width: 1100px; /* Expands even further in full screen mode */
+        }
+
+        .ac-placeholder { color: var(--text-muted); font-size: 0.88rem; text-align: center; width: 100%; padding: 40px 0; }
+
+        /* Adaptive Card DOM Overrides for Clean Layout */
+        .ac-factset { width: 100% !important; border-spacing: 0 6px !important; }
+        .ac-fact-title { font-weight: 600 !important; color: var(--text-secondary) !important; padding-right: 18px !important; white-space: nowrap !important; vertical-align: top !important; }
+        .ac-fact-value { color: var(--text) !important; vertical-align: top !important; word-break: break-word !important; }
+        .ac-columnSet { overflow-x: auto !important; }
+
+        /* JSON Code Panel */
+        .code-scroll-wrapper { width: 100%; height: 100%; overflow: auto; padding: 16px; background: #f6f8fa; }
+        .code-scroll-wrapper pre { margin: 0; font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; white-space: pre-wrap; word-wrap: break-word; }
+
+        /* Toast & Loader */
+        .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(20px); background: #11141f; color: white; padding: 10px 24px; border-radius: 24px; font-size: 0.85rem; font-weight: 500; opacity: 0; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); pointer-events: none; z-index: 10000; }
+        .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+        .loader { display: none; width: 14px; height: 14px; border: 2px solid rgba(255,255,255,0.3); border-top-color: white; border-radius: 50%; animation: spin 0.8s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        @media (max-width: 1024px) {
+            .main-content { grid-template-columns: 1fr; overflow-y: auto; }
+            .card { height: 600px; }
+            body { overflow: auto; }
+        }
+    </style>
+</head>
+<body>
+
+<nav class="navbar">
+    <a href="index.html" class="navbar-brand">
+        <div class="navbar-logo">P</div> PahAl
+    </a>
+    <div class="navbar-nav">
+        <a href="index.html" class="nav-link"><i class="fas fa-grid-2"></i> Dashboard</a>
+        <a href="#" class="nav-link active"><i class="fab fa-microsoft"></i> Adaptive Cards</a>
+    </div>
+</nav>
+
+<div class="main-content">
+    <!-- Input Section -->
+    <div class="card" id="inputCard">
+        <div class="card-header">
+            <div class="header-left">
+                <i class="fas fa-code" style="color:var(--blue);"></i>
+                <span>Source Payload (JSON)</span>
+            </div>
+            <button class="btn btn-primary" id="generateBtn">
+                <span class="loader" id="loader"></span>
+                <span id="btnText">Convert to Card</span>
+                <i class="fas fa-wand-magic-sparkles" id="btnIcon"></i>
+            </button>
+        </div>
+        <div class="editor-container">
+            <textarea id="jsonInput" class="editor-textarea" placeholder="Paste your raw JSON output (Table, Chart, Metrics) here..."></textarea>
+        </div>
+    </div>
+
+    <!-- Output Section with Tabs & Maximize -->
+    <div class="card" id="outputCard">
+        <div class="card-header">
+            <div class="header-left">
+                <div class="tabs">
+                    <button class="tab-btn active" id="tabPreviewBtn" onclick="switchTab('preview')">
+                        <i class="fas fa-eye"></i> Visual Preview
+                    </button>
+                    <button class="tab-btn" id="tabCodeBtn" onclick="switchTab('code')">
+                        <i class="fas fa-code"></i> JSON Schema
+                    </button>
+                </div>
+            </div>
+            <div class="header-actions">
+                <button class="btn btn-white" id="copyBtn" disabled title="Copy JSON Schema">
+                    <i class="far fa-copy"></i> <span>Copy JSON</span>
+                </button>
+                <button class="btn btn-white btn-icon-only" id="maximizeBtn" onclick="toggleMaximize()" title="Maximize / Restore View">
+                    <i class="fas fa-expand" id="maximizeIcon"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- View 1: Visual Adaptive Card Preview -->
+        <div class="output-view active" id="previewView">
+            <div class="preview-scroll-wrapper">
+                <div id="cardPreview" class="ac-card-wrapper">
+                    <div class="ac-placeholder">
+                        <i class="fas fa-eye" style="display:block; font-size:2rem; margin-bottom:8px; opacity:0.4;"></i>
+                        Card preview will be rendered here
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- View 2: JSON Code View -->
+        <div class="output-view" id="codeView">
+            <div class="code-scroll-wrapper">
+                <pre><code id="jsonOutput" class="language-json">// Generated Adaptive Card JSON will appear here...</code></pre>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="toast" id="toast"><i class="fas fa-check-circle" style="color:var(--green); margin-right: 6px;"></i> Copied to clipboard</div>
+
+<script>
+    const generateBtn = document.getElementById('generateBtn');
+    const jsonInput = document.getElementById('jsonInput');
+    const jsonOutput = document.getElementById('jsonOutput');
+    const cardPreview = document.getElementById('cardPreview');
+    const loader = document.getElementById('loader');
+    const btnText = document.getElementById('btnText');
+    const btnIcon = document.getElementById('btnIcon');
+    const copyBtn = document.getElementById('copyBtn');
+    const toast = document.getElementById('toast');
+    const outputCard = document.getElementById('outputCard');
+    const maximizeIcon = document.getElementById('maximizeIcon');
+
+    // Apply syntax highlight placeholder
+    hljs.highlightElement(jsonOutput);
+
+    // Switch Tabs between Preview and JSON Code
+    function switchTab(tab) {
+        const tabPreviewBtn = document.getElementById('tabPreviewBtn');
+        const tabCodeBtn = document.getElementById('tabCodeBtn');
+        const previewView = document.getElementById('previewView');
+        const codeView = document.getElementById('codeView');
+
+        if (tab === 'preview') {
+            tabPreviewBtn.classList.add('active');
+            tabCodeBtn.classList.remove('active');
+            previewView.classList.add('active');
+            codeView.classList.remove('active');
+        } else {
+            tabCodeBtn.classList.add('active');
+            tabPreviewBtn.classList.remove('active');
+            codeView.classList.add('active');
+            previewView.classList.remove('active');
+        }
+    }
+
+    // Toggle Fullscreen / Maximize
+    function toggleMaximize() {
+        const isFull = outputCard.classList.toggle('fullscreen');
+        if (isFull) {
+            maximizeIcon.classList.remove('fa-expand');
+            maximizeIcon.classList.add('fa-compress');
+        } else {
+            maximizeIcon.classList.remove('fa-compress');
+            maximizeIcon.classList.add('fa-expand');
+        }
+    }
+
+    // Allow pressing Escape to exit fullscreen
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && outputCard.classList.contains('fullscreen')) {
+            toggleMaximize();
+        }
+    });
+
+    // Render Adaptive Card using Microsoft SDK
+    function renderAdaptiveCardPreview(cardJson) {
+        try {
+            cardPreview.innerHTML = '';
+
+            let adaptiveCard = new AdaptiveCards.AdaptiveCard();
+
+            // Configure host styling for clean rendering
+            adaptiveCard.hostConfig = new AdaptiveCards.HostConfig({
+                fontFamily: "Inter, sans-serif",
+                spacing: {
+                    small: 4,
+                    default: 10,
+                    medium: 16,
+                    large: 24,
+                    extraLarge: 32,
+                    padding: 16
+                },
+                separator: {
+                    lineThickness: 1,
+                    lineColor: "#e4e7f2"
+                }
+            });
+
+            adaptiveCard.parse(cardJson);
+            let renderedCard = adaptiveCard.render();
+            cardPreview.appendChild(renderedCard);
+
+        } catch (err) {
+            console.error("Adaptive Card Render Failure:", err);
+            cardPreview.innerHTML = `
+                    <div style="color:var(--text); text-align:center; padding: 24px;">
+                        <i class="fas fa-triangle-exclamation" style="color:#ef4444; font-size:1.8rem; margin-bottom:8px;"></i>
+                        <p style="font-weight:600;">Failed to render card preview</p>
+                        <p style="font-size:0.8rem; color:var(--text-muted); margin-top:4px;">${err.message}</p>
+                    </div>`;
+        }
+    }
+
+    generateBtn.addEventListener('click', async () => {
+        const rawJson = jsonInput.value.trim();
+        if (!rawJson) return;
+
+        generateBtn.disabled = true;
+        btnText.textContent = 'Generating...';
+        btnIcon.style.display = 'none';
+        loader.style.display = 'block';
+
+        try {
+            const response = await fetch('/api/v1/adaptive-card/convert', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: rawJson
+            });
+
+            if (!response.ok) throw new Error(`Server returned status: ${response.status}`);
+
+            let resultText = await response.text();
+            resultText = resultText.replace(/^```json\s*/i, '').replace(/```$/i, '').trim();
+
+            const parsedJson = JSON.parse(resultText);
+
+            // 1. Populate Code View
+            jsonOutput.textContent = JSON.stringify(parsedJson, null, 2);
+            delete jsonOutput.dataset.highlighted;
+            hljs.highlightElement(jsonOutput);
+
+            // 2. Render Visual Preview
+            renderAdaptiveCardPreview(parsedJson);
+
+            copyBtn.disabled = false;
+            switchTab('preview'); // Ensure preview is active upon completion
+
+        } catch (error) {
+            jsonOutput.textContent = `// Error converting payload:\n${error.message}`;
+            delete jsonOutput.dataset.highlighted;
+            hljs.highlightElement(jsonOutput);
+            switchTab('code');
+        } finally {
+            generateBtn.disabled = false;
+            btnText.textContent = 'Convert to Card';
+            btnIcon.style.display = 'inline-block';
+            loader.style.display = 'none';
+        }
+    });
+
+    copyBtn.addEventListener('click', () => {
+        const code = jsonOutput.textContent;
+        if (!code || code.includes('// Generated Adaptive Card')) return;
+
+        navigator.clipboard.writeText(code).then(() => {
+            toast.classList.add('show');
+            setTimeout(() => toast.classList.remove('show'), 2500);
+        });
+    });
+</script>
+</body>
+</html>

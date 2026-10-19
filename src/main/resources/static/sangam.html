@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sangam • Agentic Deploy</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        :root {
+            --bg: #faf8f6;
+            --surface: #ffffff;
+            --surface-alt: #fdfaf8;
+            --surface-hover: #f5f0eb;
+            --text: #1a1008;
+            --text-secondary: #5c4532;
+            --text-muted: #8c7260;
+            --border: #e8ddd0;
+            --border-light: #f2ebe3;
+            --accent: #e17055;
+            --accent-dark: #c9553b;
+            --accent-light: #fef0ed;
+            --accent-glow: rgba(225, 112, 85, 0.25);
+            --green: #22c55e;
+            --radius-sm: 8px;
+            --radius: 12px;
+            --radius-lg: 16px;
+            --radius-xl: 24px;
+            --shadow-xs: 0 1px 2px rgba(0,0,0,0.03);
+            --shadow-sm: 0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.03);
+            --shadow: 0 4px 6px rgba(0,0,0,0.03), 0 2px 4px rgba(0,0,0,0.02);
+            --shadow-md: 0 10px 20px rgba(0,0,0,0.05), 0 4px 8px rgba(0,0,0,0.03);
+            --transition: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+            --transition-bounce: 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            height: 100vh;
+            overflow: hidden;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        /* Cursor & Background Effects */
+        .cursor {
+            width: 28px; height: 28px; border: 2px solid var(--accent); border-radius: 50%;
+            position: fixed; pointer-events: none; z-index: 9999;
+            transition: width 0.2s, height 0.2s, background-color 0.2s, box-shadow 0.2s;
+            transform: translate(-50%, -50%);
+        }
+        .cursor.hover {
+            width: 52px; height: 52px; background: rgba(225, 112, 85, 0.06);
+            box-shadow: 0 0 30px var(--accent-glow);
+        }
+        .cursor.click {
+            width: 34px; height: 34px; background: rgba(225, 112, 85, 0.18);
+        }
+        .cursor-dot {
+            width: 5px; height: 5px; background: var(--accent-dark); border-radius: 50%;
+            position: fixed; pointer-events: none; z-index: 9999;
+            transform: translate(-50%, -50%); box-shadow: 0 0 8px var(--accent-glow);
+        }
+        .cursor-trail {
+            position: fixed; pointer-events: none; z-index: 9997; width: 8px; height: 8px;
+            background: rgba(225, 112, 85, 0.3); border-radius: 50%; transform: translate(-50%, -50%);
+        }
+        #rippleCanvas { position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 9998; }
+        .particles-bg { position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 0; overflow: hidden; }
+        .particle { position: absolute; border-radius: 50%; animation: floatParticle 12s infinite ease-in-out; opacity: 0; }
+
+        @keyframes floatParticle {
+            0% { transform: translateY(105vh) translateX(0) scale(0) rotate(0deg); opacity: 0; }
+            15% { opacity: 0.4; }
+            70% { opacity: 0.2; }
+            100% { transform: translateY(-10vh) translateX(-10px) scale(0) rotate(360deg); opacity: 0; }
+        }
+
+        .app { display: flex; flex-direction: column; height: 100vh; position: relative; z-index: 1; }
+
+        /* Navbar */
+        .navbar {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 0 20px; height: 60px; background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(20px); border-bottom: 1px solid var(--border-light);
+            flex-shrink: 0; z-index: 100;
+        }
+        .navbar-brand { display: flex; align-items: center; gap: 8px; text-decoration: none; color: var(--text); }
+        .navbar-logo {
+            width: 34px; height: 34px; background: linear-gradient(135deg, var(--accent), #f08a70);
+            border-radius: var(--radius-sm); display: flex; align-items: center; justify-content: center;
+            color: white; font-weight: 900; font-size: 1rem;
+        }
+        .navbar-name { font-weight: 700; font-size: 1.15rem; }
+        .navbar-nav { display: flex; gap: 2px; flex: 1; justify-content: center; }
+        .nav-link {
+            padding: 6px 14px; border-radius: var(--radius-sm); font-weight: 500; font-size: 0.82rem;
+            color: var(--text-secondary); text-decoration: none; transition: var(--transition);
+            display: flex; align-items: center; gap: 6px;
+        }
+        .nav-link:hover { background: var(--surface-hover); color: var(--text); }
+        .nav-link.active { background: var(--accent); color: white; box-shadow: 0 4px 15px rgba(225, 112, 85, 0.3); }
+
+        .navbar-right { display: flex; align-items: center; gap: 8px; }
+        .workspace-btn {
+            display: flex; align-items: center; gap: 6px; padding: 6px 12px;
+            background: var(--surface-hover); border: 1px solid var(--border);
+            border-radius: 20px; font-size: 0.8rem; font-weight: 500;
+        }
+        .workspace-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); }
+
+        .user-btn {
+            display: flex; align-items: center; gap: 6px; padding: 4px 10px 4px 4px;
+            background: var(--surface-hover); border: 1px solid var(--border); border-radius: 20px;
+        }
+        .user-avatar {
+            width: 28px; height: 28px; border-radius: 50%; background: linear-gradient(135deg, var(--accent), #f08a70);
+            display: flex; align-items: center; justify-content: center; color: white; font-size: 0.7rem; font-weight: 600;
+        }
+        .user-name { font-size: 0.8rem; font-weight: 500; }
+
+        /* Main Content - Chat Interface */
+        .main-content {
+            flex: 1; display: flex; justify-content: center; padding: 24px; min-height: 0;
+        }
+        .chat-container {
+            width: 100%; max-width: 900px; display: flex; flex-direction: column;
+            background: var(--surface); border-radius: var(--radius-lg);
+            border: 1px solid var(--border-light); box-shadow: var(--shadow-md);
+            overflow: hidden;
+        }
+        .chat-header {
+            padding: 16px 24px; background: var(--surface-alt); border-bottom: 1px solid var(--border-light);
+            display: flex; align-items: center; gap: 12px;
+        }
+        .chat-header-icon {
+            width: 40px; height: 40px; background: var(--accent-light); color: var(--accent);
+            border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1.2rem;
+        }
+        .chat-header-title { font-weight: 700; font-size: 1.1rem; }
+        .chat-header-sub { font-size: 0.8rem; color: var(--text-muted); }
+
+        .chat-history {
+            flex: 1; padding: 24px; overflow-y: auto; display: flex; flex-direction: column; gap: 16px;
+            background: var(--surface-alt); scroll-behavior: smooth;
+        }
+        .chat-message {
+            max-width: 85%; padding: 14px 18px; line-height: 1.6; font-size: 0.95rem;
+            animation: fadeSlideUp 0.3s ease-out forwards; white-space: normal;
+        }
+        @keyframes fadeSlideUp {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .chat-message.user {
+            align-self: flex-end; background: var(--accent); color: white;
+            border-radius: 20px 20px 4px 20px; box-shadow: 0 4px 12px rgba(225, 112, 85, 0.2);
+        }
+        .chat-message.bot {
+            align-self: flex-start; background: var(--surface); color: var(--text);
+            border: 1px solid var(--border); border-radius: 20px 20px 20px 4px;
+            box-shadow: var(--shadow-sm);
+        }
+
+        /* Markdown styling for bot messages */
+        .chat-message.bot strong { color: var(--accent-dark); }
+        .chat-message.bot pre {
+            background: #1a1512; color: #fef0ed; padding: 12px;
+            border-radius: 8px; margin: 10px 0; overflow-x: auto;
+            font-family: 'JetBrains Mono', monospace; font-size: 0.85rem;
+        }
+        .chat-message.bot code { font-family: 'JetBrains Mono', monospace; background: var(--bg); padding: 2px 4px; border-radius: 4px; font-size: 0.85rem;}
+        .chat-message.bot pre code { background: transparent; padding: 0; }
+        .chat-message.bot p { margin-bottom: 10px; }
+        .chat-message.bot p:last-child { margin-bottom: 0; }
+        .chat-message.bot ol, .chat-message.bot ul { padding-left: 20px; margin-bottom: 10px; }
+
+        .chat-input-area {
+            display: flex; padding: 20px 24px; background: var(--surface);
+            border-top: 1px solid var(--border-light); gap: 12px; align-items: center;
+        }
+        .chat-input {
+            flex: 1; padding: 14px 20px; border: 1px solid var(--border); border-radius: 24px;
+            outline: none; font-family: 'Inter', sans-serif; font-size: 0.95rem;
+            background: var(--bg); transition: var(--transition);
+        }
+        .chat-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); background: var(--surface); }
+
+        .chat-send-btn {
+            background: var(--accent); color: white; border: none; border-radius: 50%;
+            width: 48px; height: 48px; display: flex; align-items: center; justify-content: center;
+            cursor: pointer; transition: var(--transition-bounce); font-size: 1.1rem; flex-shrink: 0;
+        }
+        .chat-send-btn:hover { transform: scale(1.05); background: var(--accent-dark); box-shadow: 0 4px 12px rgba(225, 112, 85, 0.3); }
+        .chat-send-btn:disabled { background: var(--border); cursor: not-allowed; transform: none; box-shadow: none; }
+
+        /* Typing Indicator */
+        .typing-indicator {
+            display: flex; gap: 4px; padding: 4px 8px; align-items: center; height: 20px;
+        }
+        .typing-dot {
+            width: 6px; height: 6px; background: var(--text-muted); border-radius: 50%;
+            animation: typingBlink 1.4s infinite both;
+        }
+        .typing-dot:nth-child(1) { animation-delay: 0.2s; }
+        .typing-dot:nth-child(2) { animation-delay: 0.4s; }
+        .typing-dot:nth-child(3) { animation-delay: 0.6s; }
+        @keyframes typingBlink {
+            0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); }
+            40% { opacity: 1; transform: scale(1.2); }
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+    </style>
+</head>
+<body>
+<!-- Visual Effects -->
+<div class="cursor" id="cursor"></div>
+<div class="cursor-dot" id="cursorDot"></div>
+<div class="cursor-trail" id="cursorTrail"></div>
+<canvas id="rippleCanvas"></canvas>
+<div class="particles-bg" id="particlesBg"></div>
+
+<div class="app">
+    <!-- Navbar -->
+    <nav class="navbar">
+        <a href="index.html" class="navbar-brand">
+            <div class="navbar-logo">P</div>
+            <span class="navbar-name">PahAl</span>
+        </a>
+        <div class="navbar-nav">
+            <a href="index.html" class="nav-link"><i class="fas fa-grid-2 nav-icon"></i><span>Dashboard</span></a>
+            <a href="ganga.html" class="nav-link"><i class="fas fa-chart-line nav-icon"></i><span>Analytics</span></a>
+            <a href="kaveri.html" class="nav-link"><i class="fas fa-code nav-icon"></i><span>Maps & Code</span></a>
+            <a href="yamuna.html" class="nav-link"><i class="fas fa-flask nav-icon"></i><span>Testing</span></a>
+            <a href="sangam.html" class="nav-link active"><i class="fas fa-rocket nav-icon"></i><span>Agentic Deploy</span></a>
+        </div>
+        <div class="navbar-right">
+            <div class="workspace-btn">
+                <span class="workspace-dot"></span>
+                <span>Project Sangam</span>
+            </div>
+            <div class="user-btn">
+                <div class="user-avatar">AA</div>
+                <span class="user-name">Asif Azmi</span>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Chat Interface -->
+    <div class="main-content">
+        <div class="chat-container">
+            <div class="chat-header">
+                <div class="chat-header-icon"><i class="fas fa-robot"></i></div>
+                <div>
+                    <div class="chat-header-title">DevOps Deployment Agent</div>
+                    <div class="chat-header-sub">Ready to deploy Platform 2.0 and your application</div>
+                </div>
+            </div>
+
+            <div class="chat-history" id="chatHistory">
+                <!-- Initial Welcome Message -->
+                <div class="chat-message bot">
+                    Hello! I'm your DevOps Agent. I can help you deploy <strong>Platform 2.0</strong> and the <strong>spriced-application</strong>.
+                    <br><br>
+                    To get started, just say "<strong>let's deploy</strong>" or tell me what you need!
+                </div>
+            </div>
+
+            <div class="chat-input-area">
+                <input type="text" id="chatInput" class="chat-input" placeholder="Type your message here..." autocomplete="off">
+                <button class="chat-send-btn" id="sendBtn" onclick="sendMessage()">
+                    <i class="fas fa-paper-plane"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // ============================================
+    // STATE & SESSION
+    // ============================================
+    // Generate a unique session ID for this browser tab
+    const sessionId = 'session_' + Math.random().toString(36).substring(2, 9) + Date.now().toString(36);
+
+    const chatHistory = document.getElementById('chatHistory');
+    const chatInput = document.getElementById('chatInput');
+    const sendBtn = document.getElementById('sendBtn');
+
+    // Handle Enter key
+    chatInput.addEventListener('keypress', function (e) {
+        if (e.key === 'Enter') {
+            sendMessage();
+        }
+    });
+
+    // ============================================
+    // CHAT LOGIC
+    // ============================================
+    async function sendMessage() {
+        const text = chatInput.value.trim();
+        if (!text) return;
+
+        // 1. Clear input & append user message
+        chatInput.value = '';
+        appendMessage(text, 'user');
+
+        // 2. Disable input & show loading state
+        chatInput.disabled = true;
+        sendBtn.disabled = true;
+        const loaderId = appendLoader();
+
+        try {
+            // 3. Call the Spring Boot Agent endpoint
+            // URL params for @RequestParam
+            const response = await fetch(`/api/agent/deploy?message=${encodeURIComponent(text)}&sessionId=${encodeURIComponent(sessionId)}`, {
+                method: 'POST',
+                headers: {
+                    'Accept': 'text/plain, application/json'
+                }
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const replyText = await response.text();
+
+            // 4. Remove loader & append bot response
+            removeLoader(loaderId);
+            appendMessage(replyText, 'bot');
+
+        } catch (error) {
+            console.error("Agent Error:", error);
+            removeLoader(loaderId);
+            appendMessage("⚠️ Connection error. Make sure the Spring Boot backend is running and the endpoint is correct.", 'bot');
+        } finally {
+            // 5. Re-enable input
+            chatInput.disabled = false;
+            sendBtn.disabled = false;
+            chatInput.focus();
+        }
+    }
+
+    function appendMessage(text, sender) {
+        const msgDiv = document.createElement('div');
+        msgDiv.className = `chat-message ${sender}`;
+
+        if (sender === 'bot') {
+            msgDiv.innerHTML = parseMarkdown(text);
+        } else {
+            msgDiv.textContent = text;
+        }
+
+        chatHistory.appendChild(msgDiv);
+        scrollToBottom();
+    }
+
+    function appendLoader() {
+        const id = 'loader_' + Date.now();
+        const msgDiv = document.createElement('div');
+        msgDiv.className = 'chat-message bot';
+        msgDiv.id = id;
+        msgDiv.innerHTML = `
+            <div class="typing-indicator">
+                <div class="typing-dot"></div>
+                <div class="typing-dot"></div>
+                <div class="typing-dot"></div>
+            </div>
+        `;
+        chatHistory.appendChild(msgDiv);
+        scrollToBottom();
+        return id;
+    }
+
+    function removeLoader(id) {
+        const loader = document.getElementById(id);
+        if (loader) {
+            loader.remove();
+        }
+    }
+
+    function scrollToBottom() {
+        chatHistory.scrollTop = chatHistory.scrollHeight;
+    }
+
+    // ============================================
+    // MARKDOWN PARSER (Lightweight)
+    // ============================================
+    function parseMarkdown(text) {
+        if (!text) return '';
+
+        // Escape HTML to prevent XSS
+        let html = text.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+        // Code blocks: ```code```
+        html = html.replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>');
+
+        // Inline code: `code`
+        html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+
+        // Bold: **text**
+        html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+
+        // Lists: 1. or -
+        html = html.replace(/^[0-9]+\.\s(.*)$/gm, '<li>$1</li>');
+        html = html.replace(/^-\s(.*)$/gm, '<li>$1</li>');
+
+        // Wrap consecutive li's in ul (simplified)
+        html = html.replace(/(<li>.*<\/li>(\n<li>.*<\/li>)*)/g, '<ul>$1</ul>');
+
+        // Line breaks
+        html = html.replace(/\n/g, '<br>');
+
+        // Clean up weird br's inside ul/pre
+        html = html.replace(/<ul><br>/g, '<ul>');
+        html = html.replace(/<\/li><br>/g, '</li>');
+        html = html.replace(/<pre><br>/g, '<pre>');
+
+        return html;
+    }
+
+    // ============================================
+    // VISUAL EFFECTS (Cursor & Background)
+    // ============================================
+    const cursor = document.getElementById('cursor');
+    const cursorDot = document.getElementById('cursorDot');
+    const cursorTrail = document.getElementById('cursorTrail');
+    let mouseX = 0, mouseY = 0, cursorX = 0, cursorY = 0, trailX = 0, trailY = 0;
+
+    document.addEventListener('mousemove', (e) => {
+        mouseX = e.clientX; mouseY = e.clientY;
+        cursorDot.style.left = mouseX + 'px'; cursorDot.style.top = mouseY + 'px';
+    });
+
+    document.querySelectorAll('a, button, input, .chat-message').forEach(el => {
+        el.addEventListener('mouseenter', () => cursor.classList.add('hover'));
+        el.addEventListener('mouseleave', () => cursor.classList.remove('hover'));
+    });
+    document.addEventListener('mousedown', () => cursor.classList.add('click'));
+    document.addEventListener('mouseup', () => cursor.classList.remove('click'));
+
+    function animateCursor() {
+        cursorX += (mouseX - cursorX) * 0.1; cursorY += (mouseY - cursorY) * 0.1;
+        trailX += (mouseX - trailX) * 0.04; trailY += (mouseY - trailY) * 0.04;
+        cursor.style.left = cursorX + 'px'; cursor.style.top = cursorY + 'px';
+        cursorTrail.style.left = trailX + 'px'; cursorTrail.style.top = trailY + 'px';
+        requestAnimationFrame(animateCursor);
+    }
+    animateCursor();
+
+    const canvas = document.getElementById('rippleCanvas');
+    const ctx = canvas.getContext('2d');
+    let ripples = [];
+
+    function resizeCanvas() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
+    resizeCanvas(); window.addEventListener('resize', resizeCanvas);
+
+    document.addEventListener('click', (e) => {
+        for (let i = 0; i < 3; i++) ripples.push({
+            x: e.clientX, y: e.clientY, radius: 0, maxRadius: 25 + i * 20, opacity: 0.5 - i * 0.1, speed: 2 + i * 0.8
+        });
+    });
+
+    function drawRipples() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ripples = ripples.filter(r => {
+            r.radius += r.speed; r.opacity -= 0.02;
+            if (r.opacity > 0 && r.radius < r.maxRadius) {
+                ctx.beginPath(); ctx.arc(r.x, r.y, r.radius, 0, Math.PI * 2);
+                ctx.strokeStyle = `rgba(225, 112, 85, ${r.opacity})`; ctx.lineWidth = 1.5; ctx.stroke();
+                return true;
+            }
+            return false;
+        });
+        requestAnimationFrame(drawRipples);
+    }
+    drawRipples();
+
+    function createParticles() {
+        const container = document.getElementById('particlesBg');
+        const colors = ['#e17055', '#f08a70', '#c9553b', '#f0a92e'];
+        for (let i = 0; i < 15; i++) {
+            const p = document.createElement('div'); p.className = 'particle';
+            p.style.width = (Math.random() * 5 + 2) + 'px'; p.style.height = p.style.width;
+            p.style.left = Math.random() * 100 + '%';
+            p.style.background = colors[Math.floor(Math.random() * colors.length)];
+            p.style.animationDelay = Math.random() * 12 + 's';
+            p.style.animationDuration = (Math.random() * 10 + 8) + 's';
+            container.appendChild(p);
+        }
+    }
+    createParticles();
+
+    // Auto-focus input on load
+    window.onload = () => chatInput.focus();
+</script>
+</body>
+</html>

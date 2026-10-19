@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Platform 2.0 Architect AI</title>
+
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+
+    <style>
+        :root {
+            --bg-base: #09090b; --bg-panel: #18181b; --bg-input: #27272a;
+            --primary: #3b82f6; --text-main: #f8fafc; --border-color: #27272a;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Inter', sans-serif; }
+        body { background-color: var(--bg-base); color: var(--text-main); display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+
+        header { padding: 16px 20px; background: rgba(9, 9, 11, 0.8); backdrop-filter: blur(12px); border-bottom: 1px solid var(--border-color); display: flex; align-items: center; justify-content: center; gap: 10px; z-index: 10;}
+        header svg { width: 24px; height: 24px; color: var(--primary); }
+        header h1 { font-size: 1.1rem; font-weight: 600; }
+        header p { font-size: 0.75rem; color: var(--primary); background: rgba(59,130,246,0.1); padding: 2px 8px; border-radius: 12px; margin-left: 8px;}
+
+        #chat-box { flex: 1; overflow-y: auto; padding: 40px 20px 140px 20px; scroll-behavior: smooth; }
+        .chat-content { max-width: 800px; margin: 0 auto; display: flex; flex-direction: column; gap: 30px; }
+
+        .message-row { display: flex; gap: 16px; animation: fadeIn 0.4s ease forwards; }
+        .message-row.user { justify-content: flex-end; }
+        .avatar { width: 36px; height: 36px; border-radius: 8px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+        .bot-avatar { background: linear-gradient(135deg, #1e3a8a, #3b82f6); color: white; }
+        .user-avatar { display: none; }
+
+        .message-bubble { max-width: 80%; line-height: 1.6; font-size: 0.95rem; }
+        .user .message-bubble { background: linear-gradient(135deg, #2563eb, #3b82f6); color: white; padding: 12px 18px; border-radius: 18px; border-bottom-right-radius: 4px; box-shadow: 0 4px 15px rgba(37, 99, 235, 0.2); }
+        .bot .message-bubble { color: #d4d4d8; padding-top: 6px; width: 100%;}
+        .bot .message-bubble p { margin-bottom: 12px; }
+        .bot .message-bubble strong { color: #fff; font-weight: 600; }
+        .bot .message-bubble ul { margin-left: 20px; margin-bottom: 12px; }
+
+        /* Code Blocks */
+        .code-wrapper { background: #0d1117; border: 1px solid var(--border-color); border-radius: 8px; margin: 16px 0; overflow: hidden; }
+        .code-header { background: #161b22; padding: 8px 16px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color); }
+        .code-lang { font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; color: #8b949e; text-transform: uppercase; }
+        .copy-btn { background: transparent; border: none; color: #8b949e; font-size: 0.8rem; cursor: pointer; display: flex; align-items: center; gap: 6px; }
+        .copy-btn:hover { color: #c9d1d9; }
+        .code-wrapper pre { padding: 16px; overflow-x: auto; margin: 0; }
+        .code-wrapper code { font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; }
+        p code, li code { background: #27272a; padding: 2px 6px; border-radius: 4px; font-family: 'JetBrains Mono', monospace; font-size: 0.85em; color: #60a5fa; }
+
+        /* Input Area */
+        #input-wrapper { position: fixed; bottom: 0; left: 0; right: 0; background: linear-gradient(to top, rgba(9,9,11,1) 70%, rgba(9,9,11,0)); padding: 20px; display: flex; flex-direction: column; align-items: center; }
+
+        /* File Preview Chips */
+        #file-preview-container { width: 100%; max-width: 800px; display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+        .file-chip { background: #3f3f46; border: 1px solid #52525b; border-radius: 16px; padding: 4px 12px; font-size: 0.8rem; display: flex; align-items: center; gap: 6px; color: #e4e4e7; animation: fadeIn 0.2s; }
+        .file-chip span { max-width: 150px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .file-chip button { background: none; border: none; color: #a1a1aa; cursor: pointer; font-weight: bold; display: flex; align-items: center; }
+        .file-chip button:hover { color: #ef4444; }
+
+        .input-box { width: 100%; max-width: 800px; background: var(--bg-input); border: 1px solid #3f3f46; border-radius: 24px; padding: 8px 8px 8px 16px; display: flex; gap: 10px; align-items: flex-end; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+        .input-box:focus-within { border-color: #4f46e5; }
+
+        .attach-btn { background: transparent; color: #a1a1aa; border: none; cursor: pointer; padding: 8px; border-radius: 50%; transition: color 0.2s; display: flex; margin-bottom: 2px; }
+        .attach-btn:hover { color: var(--primary); background: rgba(59,130,246,0.1); }
+
+        textarea { flex: 1; background: transparent; color: var(--text-main); border: none; font-size: 1rem; resize: none; max-height: 200px; outline: none; padding: 10px 0; line-height: 1.5; }
+        textarea::placeholder { color: #71717a; }
+
+        .send-btn { background: var(--primary); color: white; border: none; border-radius: 50%; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: transform 0.2s, background 0.2s; flex-shrink: 0; margin-bottom: 2px; }
+        .send-btn:hover:not(:disabled) { background: #2563eb; transform: scale(1.05); }
+        .send-btn:disabled { background: #3f3f46; color: #71717a; cursor: not-allowed; }
+
+        /* Typing Indicator */
+        .typing-row { display: none; }
+        .typing-dots { display: flex; gap: 4px; padding: 16px 0; }
+        .typing-dots span { width: 6px; height: 6px; background-color: var(--primary); border-radius: 50%; animation: bounce 1.4s infinite ease-in-out both; }
+        .typing-dots span:nth-child(1) { animation-delay: -0.32s; }
+        .typing-dots span:nth-child(2) { animation-delay: -0.16s; }
+
+        @keyframes bounce { 0%, 80%, 100% { transform: scale(0.5); opacity: 0.4; } 40% { transform: scale(1); opacity: 1; } }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #3f3f46; border-radius: 3px; }
+    </style>
+</head>
+<body>
+
+<header>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>
+    <h1>Architect AI</h1>
+    <p>Platform 2.0</p>
+</header>
+
+<div id="chat-box">
+    <div class="chat-content" id="chat-content">
+        <div class="message-row bot">
+            <div class="avatar bot-avatar">
+                <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none"><path d="M12 2a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2 2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"></path><path d="M18 8h-1a3 3 0 0 0-3 3v8a3 3 0 0 1-3 3h0a3 3 0 0 1-3-3v-8a3 3 0 0 0-3-3H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2v-2"></path><path d="M20 18h2a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2h-1"></path></svg>
+            </div>
+            <div class="message-bubble">
+                <p>Hello! I am your <strong>Platform 2.0 Architecture Agent</strong>.</p>
+                <p>You can upload FID documents, Excel schema files, or draw.io diagrams along with your prompt to generate DEAM and WFM maps.</p>
+            </div>
+        </div>
+
+        <div class="message-row bot typing-row" id="typing">
+            <div class="avatar bot-avatar"><svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none"><path d="M12 2a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2 2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"></path><path d="M18 8h-1a3 3 0 0 0-3 3v8a3 3 0 0 1-3 3h0a3 3 0 0 1-3-3v-8a3 3 0 0 0-3-3H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2v-2"></path><path d="M20 18h2a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2h-1"></path></svg></div>
+            <div class="typing-dots"><span></span><span></span><span></span></div>
+        </div>
+    </div>
+</div>
+
+<div id="input-wrapper">
+    <div id="file-preview-container"></div>
+    <div class="input-box">
+        <button class="attach-btn" id="attach-btn" title="Upload files (FID, Excel, draw.io)">
+            <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path></svg>
+        </button>
+        <input type="file" id="file-input" multiple style="display:none;" accept=".txt,.csv,.json,.xml,.drawio,.docx,.xlsx,.xls">
+
+        <textarea id="user-input" placeholder="Describe your data pipeline... (Shift+Enter for new line)" rows="1"></textarea>
+
+        <button id="send-btn" class="send-btn" disabled>
+            <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+        </button>
+    </div>
+</div>
+
+<script>
+    const renderer = new marked.Renderer();
+    renderer.code = function(code, lang) {
+        const language = hljs.getLanguage(lang) ? lang : 'plaintext';
+        const highlighted = hljs.highlight(code, { language }).value;
+        return `
+            <div class="code-wrapper">
+                <div class="code-header">
+                    <span class="code-lang">${language || 'json'}</span>
+                    <button class="copy-btn" onclick="copyCode(this)">
+                        <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg> Copy
+                    </button>
+                </div>
+                <pre><code class="hljs ${language}">${highlighted}</code></pre>
+            </div>`;
+    };
+    marked.setOptions({ renderer: renderer, breaks: true });
+
+    window.copyCode = function(btn) {
+        const codeBlock = btn.closest('.code-wrapper').querySelector('code');
+        navigator.clipboard.writeText(codeBlock.innerText).then(() => {
+            const originalHtml = btn.innerHTML;
+            btn.innerHTML = `<svg viewBox="0 0 24 24" width="14" height="14" stroke="#4ade80" stroke-width="2" fill="none"><polyline points="20 6 9 17 4 12"></polyline></svg> <span style="color:#4ade80">Copied!</span>`;
+            setTimeout(() => btn.innerHTML = originalHtml, 2000);
+        });
+    };
+
+    const chatBox = document.getElementById('chat-box');
+    const chatContent = document.getElementById('chat-content');
+    const userInput = document.getElementById('user-input');
+    const sendBtn = document.getElementById('send-btn');
+    const typingIndicator = document.getElementById('typing');
+    const fileInput = document.getElementById('file-input');
+    const attachBtn = document.getElementById('attach-btn');
+    const filePreviewContainer = document.getElementById('file-preview-container');
+
+    let selectedFiles = [];
+    let sessionId = sessionStorage.getItem('pahal_session_id');
+    if (!sessionId) {
+        sessionId = 'session_' + Math.random().toString(36).substring(2, 10);
+        sessionStorage.setItem('pahal_session_id', sessionId);
+    }
+
+    // File Attachment Logic
+    attachBtn.addEventListener('click', () => fileInput.click());
+
+    fileInput.addEventListener('change', function() {
+        Array.from(this.files).forEach(file => {
+            if (!selectedFiles.some(f => f.name === file.name)) {
+                selectedFiles.push(file);
+                renderFileChips();
+            }
+        });
+        this.value = ''; // Reset input
+        checkInputState();
+    });
+
+    function renderFileChips() {
+        filePreviewContainer.innerHTML = '';
+        selectedFiles.forEach((file, index) => {
+            const chip = document.createElement('div');
+            chip.className = 'file-chip';
+            chip.innerHTML = `
+                    <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path><polyline points="13 2 13 9 20 9"></polyline></svg>
+                    <span>${file.name}</span>
+                    <button onclick="removeFile(${index})">✕</button>
+                `;
+            filePreviewContainer.appendChild(chip);
+        });
+    }
+
+    window.removeFile = function(index) {
+        selectedFiles.splice(index, 1);
+        renderFileChips();
+        checkInputState();
+    };
+
+    userInput.addEventListener('input', function() {
+        this.style.height = 'auto';
+        this.style.height = (this.scrollHeight) + 'px';
+        checkInputState();
+    });
+
+    function checkInputState() {
+        sendBtn.disabled = userInput.value.trim() === '' && selectedFiles.length === 0;
+    }
+
+    userInput.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            if (!sendBtn.disabled) sendMessage();
+        }
+    });
+
+    sendBtn.addEventListener('click', sendMessage);
+
+    async function sendMessage() {
+        const text = userInput.value.trim();
+        if (!text && selectedFiles.length === 0) return;
+
+        // Render message in UI
+        let userDisplayHtml = escapeHtml(text);
+        if (selectedFiles.length > 0) {
+            const fileNames = selectedFiles.map(f => f.name).join(', ');
+            userDisplayHtml += `<br><br><span style="color:#a1a1aa; font-size:0.85em;">📎 Attached: ${fileNames}</span>`;
+        }
+        appendMessage(userDisplayHtml, 'user', true);
+
+        // Prepare FormData
+        const formData = new FormData();
+        formData.append('sessionId', sessionId);
+        if (text) formData.append('message', text);
+        else formData.append('message', "Please review the attached files.");
+
+        selectedFiles.forEach(file => formData.append('files', file));
+
+        // Clear inputs immediately
+        userInput.value = '';
+        userInput.style.height = 'auto';
+        selectedFiles = [];
+        renderFileChips();
+        checkInputState();
+        showTyping(true);
+
+        try {
+            const response = await fetch('/api/v1/architecture/chat', {
+                method: 'POST',
+                body: formData // No Content-Type header; browser handles multipart boundary automatically
+            });
+
+            if (!response.ok) throw new Error('Server error: ' + response.status);
+
+            const agentReply = await response.text();
+            appendMessage(marked.parse(agentReply), 'bot', true);
+
+        } catch (error) {
+            appendMessage(marked.parse(`❌ **Connection Error:** ${error.message}`), 'bot', true);
+        } finally {
+            showTyping(false);
+        }
+    }
+
+    function appendMessage(content, sender, isHtml = false) {
+        const rowDiv = document.createElement('div');
+        rowDiv.className = `message-row ${sender}`;
+        const botAvatarSvg = `<svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none"><path d="M12 2a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2 2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"></path><path d="M18 8h-1a3 3 0 0 0-3 3v8a3 3 0 0 1-3 3h0a3 3 0 0 1-3-3v-8a3 3 0 0 0-3-3H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2v-2"></path><path d="M20 18h2a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2h-1"></path></svg>`;
+
+        rowDiv.innerHTML = `
+                ${sender === 'bot' ? `<div class="avatar bot-avatar">${botAvatarSvg}</div>` : ''}
+                <div class="message-bubble">${isHtml ? content : escapeHtml(content)}</div>
+            `;
+        chatContent.insertBefore(rowDiv, typingIndicator);
+        scrollToBottom();
+    }
+
+    function escapeHtml(unsafe) {
+        return unsafe.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    }
+
+    function showTyping(show) {
+        typingIndicator.style.display = show ? 'flex' : 'none';
+        userInput.disabled = show;
+        attachBtn.disabled = show;
+        if (show) scrollToBottom();
+        else {
+            userInput.focus();
+            checkInputState();
+        }
+    }
+
+    function scrollToBottom() {
+        chatBox.scrollTo({ top: chatBox.scrollHeight, behavior: 'smooth' });
+    }
+</script>
+</body>
+</html>

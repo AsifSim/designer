@@ -1,0 +1,738 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PahAl • Development Platform</title>
+
+    <!-- Fonts & Icons -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
+    <!-- Marked.js & Highlight.js for Chat Widget -->
+    <script src="https://cdn.jsdelivr.net/npm/marked@9.1.2/marked.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+
+    <!-- Draw.io Viewer for Interactive Architecture Diagrams -->
+    <script type="text/javascript" src="https://viewer.diagrams.net/js/viewer-static.min.js"></script>
+
+    <style>
+        :root {
+            --bg: #f7f8fc;
+            --surface: #ffffff;
+            --surface-alt: #fafbfd;
+            --surface-hover: #f0f2f8;
+            --text: #11141f;
+            --text-secondary: #4a4f63;
+            --text-muted: #888da8;
+            --border: #e4e7f2;
+            --border-light: #f0f2f8;
+            --blue: #4f6ef7;
+            --blue-dark: #3651d5;
+            --blue-light: #eef1ff;
+            --blue-glow: rgba(79, 110, 247, 0.25);
+            --teal: #0ea882;
+            --teal-light: #e6f7f3;
+            --purple: #7c5cfc;
+            --purple-light: #f3efff;
+            --orange: #f2674a;
+            --orange-light: #fef0ed;
+            --amber: #f0a92e;
+            --amber-light: #fef7eb;
+            --green: #22c55e;
+            --green-light: #e6f9ef;
+            --red: #ef4444;
+            --red-light: #fef0ed;
+            --radius-sm: 8px;
+            --radius: 12px;
+            --radius-lg: 16px;
+            --radius-xl: 24px;
+            --shadow-xs: 0 1px 2px rgba(0,0,0,0.03);
+            --shadow-sm: 0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.03);
+            --shadow: 0 4px 6px rgba(0,0,0,0.03), 0 2px 4px rgba(0,0,0,0.02);
+            --shadow-md: 0 10px 20px rgba(0,0,0,0.05), 0 4px 8px rgba(0,0,0,0.03);
+            --shadow-lg: 0 20px 50px rgba(0,0,0,0.08);
+            --transition: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+            --transition-bounce: 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+            --transition-smooth: 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg); color: var(--text);
+            height: 100vh; overflow: hidden;
+            -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
+        }
+
+        /* Particles & Canvas */
+        .particles-bg { position: fixed; top:0; left:0; width:100%; height:100%; pointer-events: none; z-index: 0; overflow: hidden; }
+        .particle { position: absolute; border-radius: 50%; animation: floatParticle 12s infinite ease-in-out; opacity: 0; }
+        @keyframes floatParticle { 0%{transform:translateY(105vh) translateX(0) scale(0) rotate(0deg);opacity:0} 5%{opacity:0.5} 15%{transform:translateY(80vh) translateX(30px) scale(1) rotate(90deg);opacity:0.4} 40%{transform:translateY(40vh) translateX(-40px) scale(0.6) rotate(180deg);opacity:0.3} 70%{transform:translateY(15vh) translateX(20px) scale(1.2) rotate(270deg);opacity:0.2} 90%{opacity:0.05} 100%{transform:translateY(-10vh) translateX(-10px) scale(0) rotate(360deg);opacity:0} }
+
+        .app { display: flex; flex-direction: column; height: 100vh; position: relative; z-index: 1; }
+
+        /* Navbar */
+        .navbar { display: flex; align-items: center; justify-content: space-between; padding: 0 20px; height: 60px; background: rgba(255,255,255,0.85); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border-bottom: 1px solid var(--border-light); flex-shrink: 0; position: relative; z-index: 100; gap: 8px; }
+        .navbar::after { content: ''; position: absolute; bottom: -1px; left: 0; width: 100%; height: 1px; background: linear-gradient(90deg, transparent, var(--blue), var(--purple), var(--teal), transparent); opacity: 0.5; animation: shimmerBorder 4s ease-in-out infinite; }
+        @keyframes shimmerBorder { 0%,100%{opacity:0.3} 50%{opacity:0.8} }
+        .navbar-brand { display: flex; align-items: center; gap: 8px; text-decoration: none; color: var(--text); flex-shrink: 0; }
+        .navbar-logo { width: 34px; height: 34px; background: linear-gradient(135deg, var(--blue), var(--purple)); border-radius: var(--radius-sm); display: flex; align-items: center; justify-content: center; color: white; font-weight: 900; font-size: 1rem; letter-spacing: 1px; animation: logoGlow 3s ease-in-out infinite; }
+        @keyframes logoGlow { 0%,100%{box-shadow:0 0 15px rgba(79,110,247,0.3)} 50%{box-shadow:0 0 30px rgba(124,92,252,0.5)} }
+        .navbar-name { font-weight: 700; font-size: 1.15rem; letter-spacing: -0.3px; background: linear-gradient(135deg, var(--text), var(--blue)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+        .navbar-nav { display: flex; align-items: center; gap: 2px; flex: 1; justify-content: center; overflow-x: auto; flex-wrap: nowrap; }
+        .nav-link { padding: 6px 14px; border-radius: var(--radius-sm); font-weight: 500; font-size: 0.82rem; color: var(--text-secondary); text-decoration: none; transition: var(--transition); display: flex; align-items: center; gap: 6px; white-space: nowrap; flex-shrink: 0; }
+        .nav-link:hover { background: var(--surface-hover); color: var(--text); transform: translateY(-1px); }
+        .nav-link.active { background: var(--blue); color: white; box-shadow: 0 4px 15px rgba(79,110,247,0.3); }
+        .nav-link .nav-icon { font-size: 0.8rem; width: 16px; text-align: center; transition: var(--transition-bounce); }
+        .nav-link:hover .nav-icon { transform: scale(1.15) rotate(-5deg); }
+        .navbar-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+        .workspace-btn { display: flex; align-items: center; gap: 6px; padding: 6px 12px; background: var(--surface-hover); border: 1px solid var(--border); border-radius: 20px; cursor: pointer; font-size: 0.8rem; font-weight: 500; transition: var(--transition-bounce); color: var(--text-secondary); white-space: nowrap; }
+        .workspace-btn:hover { border-color: var(--blue); color: var(--text); background: var(--surface); box-shadow: var(--shadow); }
+        .workspace-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); animation: dotPulse 2s ease-in-out infinite; }
+        @keyframes dotPulse { 0%,100%{box-shadow:0 0 0 0 rgba(34,197,94,0.4)} 50%{box-shadow:0 0 0 6px rgba(34,197,94,0)} }
+        .user-btn { display: flex; align-items: center; gap: 6px; padding: 4px 10px 4px 4px; background: var(--surface-hover); border: 1px solid var(--border); border-radius: 20px; cursor: pointer; transition: var(--transition-bounce); white-space: nowrap; }
+        .user-btn:hover { background: var(--surface); box-shadow: var(--shadow); }
+        .user-avatar-top { width: 28px; height: 28px; border-radius: 50%; background: linear-gradient(135deg, var(--blue), var(--purple)); display: flex; align-items: center; justify-content: center; color: white; font-weight: 600; font-size: 0.7rem; }
+        .user-name { font-size: 0.8rem; font-weight: 500; }
+
+        /* Progress Section */
+        .progress-section { padding: 10px 20px; background: var(--surface); border-bottom: 1px solid var(--border-light); flex-shrink: 0; cursor: pointer; transition: var(--transition); }
+        .progress-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+        .progress-label { font-weight: 600; font-size: 0.72rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 1.2px; display: flex; align-items: center; gap: 6px; }
+        .progress-phase-icon { width: 7px; height: 7px; border-radius: 50%; background: var(--blue); animation: phaseBlink 1.5s ease-in-out infinite; }
+        @keyframes phaseBlink { 0%,100%{opacity:1;box-shadow:0 0 6px var(--blue)} 50%{opacity:0.4;box-shadow:0 0 12px var(--blue)} }
+        .progress-value { font-weight: 700; font-size: 0.85rem; color: var(--blue); font-family: 'JetBrains Mono', monospace; }
+        .progress-bar { width: 100%; height: 6px; background: var(--border-light); border-radius: 20px; overflow: hidden; position: relative; }
+        .progress-fill { height: 100%; background: linear-gradient(90deg, var(--blue), var(--purple), var(--teal)); background-size: 200% 100%; border-radius: 20px; transition: width 0.6s cubic-bezier(0.4,0,0.2,1); animation: progressShimmer 2.5s ease-in-out infinite; position: relative; width: 15%; }
+        @keyframes progressShimmer { 0%,100%{background-position:0% 50%} 50%{background-position:100% 50%} }
+        .progress-steps { display: flex; justify-content: space-between; margin-top: 6px; }
+        .step-indicator { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+        .step-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--border); border: 2px solid var(--border-light); transition: all 0.4s ease; }
+        .step-dot.active { background: var(--blue); border-color: var(--blue); box-shadow: 0 0 12px rgba(79,110,247,0.5); }
+        .step-dot.completed { background: var(--teal); border-color: var(--teal); }
+        .step-label { font-size: 0.6rem; color: var(--text-muted); font-weight: 500; font-family: 'JetBrains Mono', monospace; }
+        .step-label.active { color: var(--blue); font-weight: 600; }
+
+        /* Main Layout */
+        .main-content { flex: 1; overflow-y: auto; padding: 20px 24px; min-height: 0; }
+        .dashboard { display: grid; grid-template-columns: 1.6fr 1fr; gap: 20px; max-width: 1300px; margin: 0 auto; height: 100%; }
+
+        .card { background: var(--surface); border-radius: var(--radius-lg); border: 1px solid var(--border-light); padding: 20px; box-shadow: var(--shadow-sm); transition: var(--transition-smooth); }
+        .card-header { font-weight: 600; font-size: 0.88rem; margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; color: var(--text); }
+        .card-title { display: flex; align-items: center; gap: 6px; }
+
+        /* General Buttons */
+        .btn { padding: 8px 18px; border-radius: var(--radius-sm); font-weight: 600; font-size: 0.82rem; cursor: pointer; transition: var(--transition-bounce); border: none; display: inline-flex; align-items: center; justify-content: center; gap: 6px; text-decoration: none; position: relative; overflow: hidden; white-space: nowrap; }
+        .btn-primary { background: var(--blue); color: white; box-shadow: 0 4px 12px rgba(79,110,247,0.25); }
+        .btn-primary:hover:not(:disabled) { background: var(--blue-dark); transform: translateY(-2px); box-shadow: 0 8px 25px rgba(79,110,247,0.4); }
+        .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; transform: translateY(0); box-shadow: none; }
+        .btn-white { background: var(--surface); color: var(--text); border: 1px solid var(--border); box-shadow: var(--shadow-sm); }
+        .btn-white:hover { background: var(--surface-hover); border-color: var(--blue); color: var(--blue); }
+
+        /* Quick Start Dropzone */
+        .dropzone { border: 2px dashed var(--border); border-radius: var(--radius-lg); padding: 28px; text-align: center; cursor: pointer; transition: var(--transition-bounce); background: var(--surface-alt); position: relative; overflow: hidden; }
+        .dropzone:hover { border-color: var(--blue); background: var(--surface); transform: translateY(-2px); box-shadow: var(--shadow-sm); }
+        .dropzone.drag-over { border-color: var(--green); background: var(--green-light); transform: scale(1.02); }
+        .dropzone.has-file { border-color: var(--green); background: var(--green-light); }
+        .dropzone-icon { font-size: 2rem; color: var(--blue); margin-bottom: 8px; transition: var(--transition-bounce); }
+        .dropzone-text { font-weight: 600; margin-bottom: 2px; font-size: 0.9rem; }
+        .dropzone-hint { font-size: 0.75rem; color: var(--text-muted); }
+        .dropzone-file-name { margin-top: 10px; font-weight: 500; font-size: 0.8rem; color: var(--green); display: none; }
+
+        /* Quick Links */
+        .quick-links { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-top: 12px; }
+        .quick-link { padding: 12px 14px; background: var(--surface-alt); border-radius: var(--radius); text-decoration: none; color: var(--text); font-weight: 500; font-size: 0.8rem; display: flex; align-items: center; gap: 8px; transition: var(--transition-bounce); border: 1px solid transparent; }
+        .quick-link:hover { background: var(--surface); border-color: var(--border); box-shadow: var(--shadow-sm); transform: translateY(-2px); }
+        .quick-link-icon { width: 30px; height: 30px; border-radius: var(--radius-sm); display: flex; align-items: center; justify-content: center; font-size: 0.8rem; transition: var(--transition-bounce); flex-shrink: 0; }
+        .quick-link:hover .quick-link-icon { transform: scale(1.2) rotate(-8deg); }
+        .quick-link-icon.orange{background:var(--orange-light);color:var(--orange)}
+        .quick-link-icon.teal{background:var(--teal-light);color:var(--teal)}
+
+        /* --------------------------------------------------------
+           CHAT WIDGET (Light Theme)
+           -------------------------------------------------------- */
+        .chat-widget { display: flex; flex-direction: column; background: var(--surface); border-radius: var(--radius-xl); overflow: hidden; box-shadow: var(--shadow-md); height: calc(100vh - 160px); border: 1px solid var(--border); transition: all 0.4s cubic-bezier(0.22, 1, 0.36, 1); position: relative; z-index: 10; }
+        .chat-widget.fullscreen { position: fixed; top: 60px; left: 0; right: 0; bottom: 0; width: 100%; height: calc(100vh - 60px); border-radius: 0; border: none; z-index: 90; box-shadow: none; }
+
+        .chat-header { padding: 14px 20px; background: var(--surface-alt); border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
+        .chat-header-title { display: flex; align-items: center; gap: 10px; }
+        .chat-header-title i { font-size: 1.2rem; color: var(--blue); }
+        .chat-header-title h2 { font-size: 1rem; font-weight: 600; color: var(--text); }
+        .chat-header-actions { display: flex; align-items: center; gap: 10px; }
+        .chat-header-actions span { font-size: 0.7rem; color: var(--blue); background: var(--blue-light); padding: 4px 10px; border-radius: 12px; font-weight: 600; }
+        .chat-header-actions button { padding: 6px 10px; }
+
+        .chat-box { flex: 1; overflow-y: auto; padding: 24px; scroll-behavior: smooth; display: flex; flex-direction: column; gap: 24px; background: var(--surface); }
+        .message-row { display: flex; gap: 16px; animation: fadeIn 0.4s ease forwards; }
+        .message-row.user { justify-content: flex-end; }
+
+        .chat-avatar { width: 32px; height: 32px; border-radius: 8px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 0.9rem; }
+        .chat-bot-avatar { background: linear-gradient(135deg, var(--blue-light), #dbeafe); color: var(--blue-dark); box-shadow: var(--shadow-sm); }
+
+        .message-bubble { max-width: 85%; line-height: 1.6; font-size: 0.92rem; color: var(--text); }
+        .user .message-bubble { background: linear-gradient(135deg, var(--blue-dark), var(--blue)); color: white; padding: 12px 18px; border-radius: 18px; border-bottom-right-radius: 4px; box-shadow: 0 4px 15px var(--blue-glow); }
+
+        .bot .message-bubble { background: var(--surface-alt); border: 1px solid var(--border-light); padding: 14px 18px; border-radius: 18px; border-bottom-left-radius: 4px; box-shadow: var(--shadow-xs); width: 100%; color: var(--text-secondary); overflow-x: hidden; }
+        .bot .message-bubble p { margin-bottom: 12px; }
+        .bot .message-bubble p:last-child { margin-bottom: 0; }
+        .bot .message-bubble strong { color: var(--text); font-weight: 600; }
+        .bot .message-bubble ul { margin-left: 20px; margin-bottom: 12px; }
+
+        /* DEEPSEEK STYLE TOOL ACCORDION */
+        .tool-accordion {
+            margin-bottom: 16px;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            background: #f8fafc;
+            overflow: hidden;
+            width: fit-content;
+            min-width: 280px;
+            max-width: 100%;
+            box-shadow: var(--shadow-xs);
+        }
+        .tool-accordion-header {
+            padding: 8px 14px;
+            font-size: 0.8rem;
+            font-family: 'Inter', sans-serif;
+            font-weight: 600;
+            color: var(--text-secondary);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            user-select: none;
+            transition: background 0.2s;
+        }
+        .tool-accordion-header:hover { background: #f1f5f9; }
+        .tool-accordion-header i { transition: transform 0.3s; font-size: 0.75rem; color: var(--text-muted); }
+        .tool-accordion-header.open i { transform: rotate(90deg); }
+
+        .tool-accordion-body {
+            display: none;
+            flex-direction: column;
+            gap: 12px;
+            padding: 12px 14px;
+            border-top: 1px dashed var(--border);
+            background: #ffffff;
+        }
+        .tool-accordion-body.open { display: flex; }
+
+        .tool-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            font-family: 'JetBrains Mono', monospace;
+            line-height: 1.4;
+        }
+        .tool-item-icon { margin-top: 2px; color: var(--teal); font-size: 0.85rem; }
+        .tool-item-title { font-weight: 700; color: var(--text); margin-bottom: 2px; display: block;}
+
+        /* Code Blocks & Interactive Draw.io Viewer */
+        .code-wrapper { background: #f6f8fa; border: 1px solid var(--border); border-radius: 8px; margin: 16px 0; overflow: hidden; box-shadow: var(--shadow-xs); width: 100%; }
+        .code-header { background: #eaedf1; padding: 8px 12px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); }
+        .code-lang { font-family: 'JetBrains Mono', monospace; font-size: 0.7rem; color: #57606a; text-transform: uppercase; font-weight: 600; }
+        .copy-btn { background: transparent; border: none; color: #57606a; font-size: 0.75rem; cursor: pointer; display: flex; align-items: center; gap: 6px; font-weight: 500; transition: color 0.2s; }
+        .copy-btn:hover { color: var(--blue); }
+        .code-wrapper pre { padding: 16px; overflow-x: auto; margin: 0; }
+        .code-wrapper code { font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; }
+        p code, li code { background: var(--surface-hover); padding: 2px 6px; border-radius: 4px; font-family: 'JetBrains Mono', monospace; font-size: 0.85em; color: var(--blue-dark); border: 1px solid var(--border-light); }
+
+        .chat-input-wrapper { padding: 16px 20px; background: var(--surface); border-top: 1px solid var(--border); flex-shrink: 0; }
+        .chat-file-preview { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+        .chat-file-chip { background: var(--surface-hover); border: 1px solid var(--border); border-radius: 12px; padding: 4px 10px; font-size: 0.75rem; display: flex; align-items: center; gap: 6px; color: var(--text-secondary); font-weight: 500; }
+        .chat-file-chip span { max-width: 150px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .chat-file-chip button { background: none; border: none; color: var(--text-muted); cursor: pointer; display: flex; align-items: center; }
+        .chat-file-chip button:hover { color: var(--red); }
+
+        .chat-input-box { background: var(--surface-alt); border: 1px solid var(--border); border-radius: 24px; padding: 8px 8px 8px 16px; display: flex; gap: 8px; align-items: flex-end; transition: border-color 0.3s, box-shadow 0.3s; }
+        .chat-input-box:focus-within { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(79, 110, 247, 0.1); background: var(--surface); }
+
+        .chat-attach-btn { background: transparent; color: var(--text-muted); border: none; cursor: pointer; padding: 8px; border-radius: 50%; display: flex; margin-bottom: 2px; transition: all 0.2s; }
+        .chat-attach-btn:hover { color: var(--blue); background: var(--blue-light); }
+
+        .chat-textarea { flex: 1; background: transparent; color: var(--text); border: none; font-size: 0.95rem; resize: none; max-height: 150px; outline: none; padding: 8px 0; line-height: 1.5; }
+        .chat-textarea::placeholder { color: var(--text-muted); }
+
+        .chat-send-btn { background: var(--blue); color: white; border: none; border-radius: 50%; width: 38px; height: 38px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: transform 0.2s, background 0.2s; flex-shrink: 0; margin-bottom: 2px; box-shadow: 0 2px 8px rgba(79, 110, 247, 0.3); }
+        .chat-send-btn:hover:not(:disabled) { background: var(--blue-dark); transform: scale(1.05); box-shadow: 0 4px 12px rgba(79, 110, 247, 0.4); }
+        .chat-send-btn:disabled { background: var(--border); color: var(--text-muted); cursor: not-allowed; box-shadow: none; }
+
+        .typing-row { display: none; }
+        .typing-dots { display: flex; gap: 4px; padding: 12px 0; }
+        .typing-dots span { width: 6px; height: 6px; background-color: var(--blue); border-radius: 50%; animation: bounce 1.4s infinite ease-in-out both; }
+        .typing-dots span:nth-child(1) { animation-delay: -0.32s; }
+        .typing-dots span:nth-child(2) { animation-delay: -0.16s; }
+
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+        .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: #1a1d28; color: white; padding: 10px 20px; border-radius: 24px; font-size: 0.8rem; font-weight: 500; z-index: 10000; opacity: 0; pointer-events: none; transition: opacity 0.3s, transform 0.4s; }
+        .toast.show { opacity: 1; transform: translateX(-50%) translateY(-6px); }
+
+        @media (max-width:1024px) { .dashboard{grid-template-columns:1fr; height: auto;} .chat-widget{height: 600px;} }
+    </style>
+</head>
+<body>
+<div class="particles-bg" id="particlesBg"></div>
+
+<input type="file" id="tbrdFileInput" style="display:none;" accept=".docx,.txt">
+<input type="file" id="chatFileInput" multiple style="display:none;" accept=".txt,.csv,.json,.xml,.drawio,.docx,.xlsx,.xls,.sql,.java">
+
+<div class="app">
+    <nav class="navbar">
+        <a href="index.html" class="navbar-brand"><div class="navbar-logo">P</div><span class="navbar-name">PahAl</span></a>
+        <div class="navbar-nav">
+            <a href="index.html" class="nav-link active"><i class="fas fa-grid-2 nav-icon"></i><span>Dashboard</span></a>
+            <a href="ganga.html" class="nav-link"><i class="fas fa-chart-line nav-icon"></i><span>Analytics</span></a>
+            <a href="kaveri.html" class="nav-link"><i class="fas fa-code nav-icon"></i><span>Maps & Code</span></a>
+            <a href="yamuna.html" class="nav-link"><i class="fas fa-flask nav-icon"></i><span>Testing</span></a>
+            <a href="sangam.html" class="nav-link"><i class="fas fa-rocket nav-icon"></i><span>Deploy</span></a>
+            <a href="#" class="nav-link"><i class="fas fa-box-archive nav-icon"></i><span>Assets</span></a>
+        </div>
+        <div class="navbar-right">
+            <div class="workspace-btn" id="workspaceBtn"><span class="workspace-dot"></span><span id="workspaceName">Project Mercury</span><i class="fas fa-chevron-down" style="font-size:0.6rem;"></i></div>
+            <div class="user-btn" id="userBtn"><div class="user-avatar-top">AK</div><span class="user-name">Arjun Kumar</span></div>
+        </div>
+    </nav>
+
+    <div class="progress-section">
+        <div class="progress-header"><span class="progress-label"><span class="progress-phase-icon"></span><span id="phaseLabel">Architecture Phase</span></span><span class="progress-value" id="progressPercent">15%</span></div>
+        <div class="progress-bar"><div class="progress-fill"></div></div>
+        <div class="progress-steps">
+            <div class="step-indicator"><div class="step-dot completed"></div><div class="step-label">Upload</div></div>
+            <div class="step-indicator"><div class="step-dot active"></div><div class="step-label active">Architecture</div></div>
+            <div class="step-indicator"><div class="step-dot"></div><div class="step-label">Code</div></div>
+            <div class="step-indicator"><div class="step-dot"></div><div class="step-label">Test</div></div>
+            <div class="step-indicator"><div class="step-dot"></div><div class="step-label">Deploy</div></div>
+        </div>
+    </div>
+
+    <div class="main-content">
+        <div class="dashboard">
+            <div class="chat-widget" id="chat-widget">
+                <div class="chat-header">
+                    <div class="chat-header-title">
+                        <i class="fas fa-robot"></i>
+                        <h2>Platform 2.0 Architect AI</h2>
+                    </div>
+                    <div class="chat-header-actions">
+                        <span>Active Session</span>
+                        <button id="chat-fullscreen-btn" class="btn btn-sm btn-white" title="Maximize/Minimize">
+                            <i class="fas fa-expand"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="chat-box" id="chat-box">
+                    <div class="message-row bot">
+                        <div class="chat-avatar chat-bot-avatar">
+                            <i class="fas fa-bolt"></i>
+                        </div>
+                        <div class="message-bubble">
+                            <p>Hello! I am your <strong>Platform 2.0 Architecture Agent</strong>.</p>
+                            <p>You can upload FID documents, Java/SQL Code, or draw.io diagrams to instantly design Virtual Attributes via Excel.</p>
+                        </div>
+                    </div>
+
+                    <div class="message-row bot typing-row" id="chat-typing">
+                        <div class="chat-avatar chat-bot-avatar"><i class="fas fa-ellipsis-h"></i></div>
+                        <div class="typing-dots"><span></span><span></span><span></span></div>
+                    </div>
+                </div>
+
+                <div class="chat-input-wrapper">
+                    <div class="chat-file-preview" id="chat-file-preview-container"></div>
+                    <div class="chat-input-box">
+                        <button class="chat-attach-btn" id="chat-attach-btn" title="Upload files (FID, Excel, Code, draw.io)">
+                            <i class="fas fa-paperclip" style="font-size: 1.1rem;"></i>
+                        </button>
+                        <textarea class="chat-textarea" id="chat-input" placeholder="Paste your SQL/Java code or describe your pipeline... (Shift+Enter for new line)" rows="1"></textarea>
+                        <button id="chat-send-btn" class="chat-send-btn" disabled>
+                            <i class="fas fa-paper-plane" style="margin-right: 2px;"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Sidebar Columns -->
+            <div>
+                <div class="card">
+                    <div class="card-header"><div class="card-title"><i class="fas fa-file-word" style="color:var(--blue);"></i> Legacy Processor</div><span style="font-size:0.7rem;color:var(--text-muted);">TBRD Flow</span></div>
+                    <div class="dropzone" id="tbrdDropZone">
+                        <div class="dropzone-icon"><i class="fas fa-cloud-arrow-up"></i></div>
+                        <div class="dropzone-text">Drop TBRD Document Here</div>
+                        <div class="dropzone-hint">or click to browse • .docx, .txt format</div>
+                        <div class="dropzone-file-name" id="tbrdFileName"></div>
+                    </div>
+                    <div style="text-align:center;margin-top:16px;">
+                        <button class="btn btn-white" id="tbrdStartBtn" disabled style="width: 100%;">
+                            <i class="fas fa-arrow-right"></i> Process TBRD
+                        </button>
+                    </div>
+                </div>
+
+                <div class="card" style="margin-top:20px;">
+                    <div class="card-header"><div class="card-title"><i class="fas fa-wand-magic-sparkles" style="color:var(--purple);"></i> AI Assistants</div></div>
+                    <div class="quick-links">
+                        <a href="TBRD-generator.html" class="quick-link">
+                            <div class="quick-link-icon orange"><i class="fas fa-file-invoice"></i></div>
+                            <div>
+                                <div style="font-weight: 600; font-size: 0.85rem; color: var(--text);">TBRD Generator</div>
+                                <div style="font-size: 0.65rem; color: var(--text-muted);">Generate requirement docs</div>
+                            </div>
+                        </a>
+                        <a href="#" class="quick-link">
+                            <div class="quick-link-icon teal"><i class="fas fa-user-astronaut"></i></div>
+                            <div>
+                                <div style="font-weight: 600; font-size: 0.85rem; color: var(--text);">Design Buddy</div>
+                                <div style="font-size: 0.65rem; color: var(--text-muted);">Technical architecture AI</div>
+                            </div>
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+    // Utility function to escape HTML strings safely (used by renderer & chat)
+    function escapeHtml(unsafe) {
+        return String(unsafe).replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
+    }
+
+    function showToast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');clearTimeout(t._timeout);t._timeout=setTimeout(()=>t.classList.remove('show'),2500);}
+
+    // Interactive toggle for the Tool Accordion
+    window.toggleAccordion = function(headerElement) {
+        headerElement.classList.toggle('open');
+        const bodyElement = headerElement.nextElementSibling;
+        bodyElement.classList.toggle('open');
+    };
+
+    // ============================================
+    // TBRD FILE UPLOAD (Right Panel)
+    // ============================================
+    const tbrdDropZone = document.getElementById('tbrdDropZone');
+    const tbrdFileInput = document.getElementById('tbrdFileInput');
+    const tbrdStartBtn = document.getElementById('tbrdStartBtn');
+    const tbrdFileNameDisplay = document.getElementById('tbrdFileName');
+    let tbrdSelectedFile = null;
+
+    tbrdDropZone.addEventListener('click', () => tbrdFileInput.click());
+
+    tbrdFileInput.addEventListener('change', (e) => {
+        if (e.target.files.length > 0) handleTbrdFile(e.target.files[0]);
+    });
+
+    tbrdDropZone.addEventListener('dragover', (e) => { e.preventDefault(); tbrdDropZone.classList.add('drag-over'); });
+    tbrdDropZone.addEventListener('dragleave', (e) => { e.preventDefault(); tbrdDropZone.classList.remove('drag-over'); });
+    tbrdDropZone.addEventListener('drop', (e) => {
+        e.preventDefault(); tbrdDropZone.classList.remove('drag-over');
+        if (e.dataTransfer.files.length > 0) handleTbrdFile(e.dataTransfer.files[0]);
+    });
+
+    function handleTbrdFile(file) {
+        const fileName = file.name.toLowerCase();
+        if (!fileName.endsWith('.docx') && !fileName.endsWith('.txt')) { showToast('❌ Please select a .docx or .txt file'); return; }
+        tbrdSelectedFile = file;
+        tbrdFileNameDisplay.textContent = '📎 ' + file.name;
+        tbrdFileNameDisplay.style.display = 'block';
+        tbrdDropZone.classList.add('has-file');
+
+        tbrdStartBtn.disabled = false;
+        tbrdStartBtn.classList.remove('btn-white');
+        tbrdStartBtn.classList.add('btn-primary');
+
+        showToast('✅ TBRD ready: ' + file.name);
+    }
+
+    tbrdStartBtn.addEventListener('click', () => {
+        if (!tbrdSelectedFile) return;
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            sessionStorage.setItem('tbrdFileData', e.target.result);
+            sessionStorage.setItem('tbrdFileName', tbrdSelectedFile.name);
+            window.location.href = 'kaveri.html';
+        };
+        reader.readAsDataURL(tbrdSelectedFile);
+    });
+
+    // ============================================
+    // CHAT WIDGET FULLSCREEN & LOGIC
+    // ============================================
+    const chatWidget = document.getElementById('chat-widget');
+    const chatFullscreenBtn = document.getElementById('chat-fullscreen-btn');
+    const chatInput = document.getElementById('chat-input');
+    let isFullscreen = false;
+
+    function toggleFullscreen() {
+        isFullscreen = !isFullscreen;
+        if (isFullscreen) {
+            chatWidget.classList.add('fullscreen');
+            chatFullscreenBtn.innerHTML = '<i class="fas fa-compress"></i>';
+            chatInput.focus();
+        } else {
+            chatWidget.classList.remove('fullscreen');
+            chatFullscreenBtn.innerHTML = '<i class="fas fa-expand"></i>';
+        }
+        scrollChatToBottom();
+    }
+
+    chatFullscreenBtn.addEventListener('click', toggleFullscreen);
+
+    chatInput.addEventListener('focus', () => {
+        if (!isFullscreen) toggleFullscreen();
+    });
+
+    // ============================================
+    // MARKDOWN RENDERER (Supports Native Draw.io)
+    // ============================================
+    const renderer = new marked.Renderer();
+    renderer.code = function(code, lang) {
+        // Detect Draw.io XML format
+        if ((lang === 'xml' || lang === 'drawio') && (code.includes('<mxfile') || code.includes('<mxGraphModel'))) {
+            const config = {
+                highlight: "#4f6ef7",
+                nav: true,
+                resize: true,
+                toolbar: "zoom pan zoomOut zoomIn lightbox",
+                xml: code
+            };
+
+            const escapedConfig = escapeHtml(JSON.stringify(config));
+
+            return `
+            <div class="code-wrapper">
+                <div class="code-header" style="background: var(--blue-light); border-bottom-color: var(--blue-glow);">
+                    <span class="code-lang" style="color: var(--blue-dark);"><i class="fas fa-project-diagram"></i> Interactive Architecture Diagram</span>
+                    <button class="copy-btn" onclick="copyCode(this)">
+                        <i class="far fa-copy"></i> Copy XML
+                    </button>
+                </div>
+                <div style="background: white; padding: 20px; overflow-x: auto; min-height: 200px; display: flex; justify-content: center;">
+                    <div class="mxgraph" style="max-width:100%; border:1px solid transparent;" data-mxgraph="${escapedConfig}"></div>
+                </div>
+                <pre style="display:none;"><code>${escapeHtml(code)}</code></pre>
+            </div>`;
+        }
+
+        // Standard syntax highlighting for regular code (Java, JSON, etc)
+        const language = hljs.getLanguage(lang) ? lang : 'plaintext';
+        const highlighted = hljs.highlight(code, { language }).value;
+        return `
+            <div class="code-wrapper">
+                <div class="code-header">
+                    <span class="code-lang">${language || 'text'}</span>
+                    <button class="copy-btn" onclick="copyCode(this)">
+                        <i class="far fa-copy"></i> Copy
+                    </button>
+                </div>
+                <pre><code class="hljs ${language}">${highlighted}</code></pre>
+            </div>`;
+    };
+
+    marked.setOptions({ renderer: renderer, breaks: true });
+
+    // Use textContent to fetch the raw text safely even when display:none
+    window.copyCode = function(btn) {
+        const codeBlock = btn.closest('.code-wrapper').querySelector('code');
+        navigator.clipboard.writeText(codeBlock.textContent).then(() => {
+            const originalHtml = btn.innerHTML;
+            btn.innerHTML = `<i class="fas fa-check" style="color:var(--green)"></i> <span style="color:var(--green)">Copied!</span>`;
+            setTimeout(() => btn.innerHTML = originalHtml, 2000);
+        });
+    };
+
+    const chatBox = document.getElementById('chat-box');
+    const chatSendBtn = document.getElementById('chat-send-btn');
+    const chatTypingIndicator = document.getElementById('chat-typing');
+    const chatFileInput = document.getElementById('chatFileInput');
+    const chatAttachBtn = document.getElementById('chat-attach-btn');
+    const chatFilePreviewContainer = document.getElementById('chat-file-preview-container');
+
+    let chatFiles = [];
+    let sessionId = sessionStorage.getItem('pahal_session_id') || ('session_' + Math.random().toString(36).substring(2, 10));
+    sessionStorage.setItem('pahal_session_id', sessionId);
+
+    chatAttachBtn.addEventListener('click', () => chatFileInput.click());
+
+    chatFileInput.addEventListener('change', function() {
+        Array.from(this.files).forEach(file => {
+            if (!chatFiles.some(f => f.name === file.name)) {
+                chatFiles.push(file);
+                renderChatFileChips();
+            }
+        });
+        this.value = '';
+        checkChatInputState();
+        if (!isFullscreen) toggleFullscreen();
+    });
+
+    function renderChatFileChips() {
+        chatFilePreviewContainer.innerHTML = '';
+        chatFiles.forEach((file, index) => {
+            const chip = document.createElement('div');
+            chip.className = 'chat-file-chip';
+            chip.innerHTML = `
+                <i class="fas fa-paperclip" style="color:var(--text-muted)"></i>
+                <span>${file.name}</span>
+                <button onclick="removeChatFile(${index})" title="Remove"><i class="fas fa-times"></i></button>
+            `;
+            chatFilePreviewContainer.appendChild(chip);
+        });
+    }
+
+    window.removeChatFile = function(index) {
+        chatFiles.splice(index, 1);
+        renderChatFileChips();
+        checkChatInputState();
+    };
+
+    chatInput.addEventListener('input', function() {
+        this.style.height = 'auto';
+        this.style.height = (this.scrollHeight) + 'px';
+        checkChatInputState();
+    });
+
+    function checkChatInputState() {
+        chatSendBtn.disabled = chatInput.value.trim() === '' && chatFiles.length === 0;
+    }
+
+    chatInput.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            if (!chatSendBtn.disabled) sendChatMessage();
+        }
+    });
+
+    chatSendBtn.addEventListener('click', sendChatMessage);
+
+    async function sendChatMessage() {
+        const text = chatInput.value.trim();
+        if (!text && chatFiles.length === 0) return;
+
+        let userDisplayHtml = escapeHtml(text);
+        if (chatFiles.length > 0) {
+            const fileNames = chatFiles.map(f => f.name).join(', ');
+            userDisplayHtml += `<br><br><span style="color:rgba(255,255,255,0.8); font-size:0.85em; font-weight: 500;"><i class="fas fa-paperclip"></i> Attached: ${fileNames}</span>`;
+        }
+        appendChatMessage(userDisplayHtml, 'user', true);
+
+        const formData = new FormData();
+        formData.append('sessionId', sessionId);
+        formData.append('message', text || "Please review the attached files.");
+        chatFiles.forEach(file => formData.append('files', file));
+
+        chatInput.value = '';
+        chatInput.style.height = 'auto';
+        chatFiles = [];
+        renderChatFileChips();
+        checkChatInputState();
+        showChatTyping(true);
+
+        try {
+            const response = await fetch('/api/v1/architecture/chat', { method: 'POST', body: formData });
+            if (!response.ok) throw new Error('Server error: ' + response.status);
+
+            const responseText = await response.text();
+            let responseData;
+
+            try {
+                // Parse the ChatResponseDto containing message and toolsUsed
+                responseData = JSON.parse(responseText);
+            } catch (e) {
+                // Fallback if the server fails to return the JSON structure
+                responseData = { message: responseText, toolsUsed: [] };
+            }
+
+            // Construct DeepSeek-style UI
+            let combinedHtml = "";
+
+            // 1. Generate the Accordion UI if tools were executed
+            if (responseData.toolsUsed && responseData.toolsUsed.length > 0) {
+                let toolItemsHtml = responseData.toolsUsed.map(tool => {
+                    // Assign icon based on tool type
+                    let icon = 'fas fa-cogs';
+                    if (tool.tool.includes('GitHub') || tool.tool.includes('Documentation')) icon = 'fab fa-github';
+                    if (tool.tool.includes('Deam') || tool.tool.includes('Schema') || tool.tool.includes('Store')) icon = 'fas fa-database';
+                    if (tool.tool.includes('Excel')) icon = 'fas fa-file-excel';
+
+                    return `
+                        <div class="tool-item">
+                            <i class="${icon} tool-item-icon"></i>
+                            <div>
+                                <span class="tool-item-title">${escapeHtml(tool.tool)}</span>
+                                <span>${escapeHtml(tool.detail)}</span>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+
+                combinedHtml += `
+                    <div class="tool-accordion">
+                        <div class="tool-accordion-header" onclick="toggleAccordion(this)">
+                            <i class="fas fa-chevron-right"></i>
+                            Used ${responseData.toolsUsed.length} tool${responseData.toolsUsed.length > 1 ? 's' : ''}
+                        </div>
+                        <div class="tool-accordion-body">
+                            ${toolItemsHtml}
+                        </div>
+                    </div>
+                `;
+            }
+
+            // 2. Append the actual Markdown message parsed into HTML below the tools
+            if (responseData.message) {
+                combinedHtml += marked.parse(responseData.message);
+            }
+
+            appendChatMessage(combinedHtml, 'bot', true);
+
+        } catch (error) {
+            appendChatMessage(marked.parse(`❌ **Error:** ${error.message}`), 'bot', true);
+        } finally {
+            showChatTyping(false);
+        }
+    }
+
+    function appendChatMessage(content, sender, isHtml = false) {
+        const rowDiv = document.createElement('div');
+        rowDiv.className = `message-row ${sender}`;
+        const botAvatarHtml = `<div class="chat-avatar chat-bot-avatar"><i class="fas fa-robot"></i></div>`;
+        rowDiv.innerHTML = `
+            ${sender === 'bot' ? botAvatarHtml : ''}
+            <div class="message-bubble">${isHtml ? content : escapeHtml(content)}</div>
+        `;
+        chatBox.insertBefore(rowDiv, chatTypingIndicator);
+        scrollChatToBottom();
+
+        // If the newly appended message contains an mxgraph element, command the viewer to render it
+        if (isHtml && window.GraphViewer) {
+            setTimeout(() => {
+                GraphViewer.processElements();
+                scrollChatToBottom(); // Re-adjust scroll after diagram forces height change
+            }, 150);
+        }
+    }
+
+    function showChatTyping(show) {
+        chatTypingIndicator.style.display = show ? 'flex' : 'none';
+        chatInput.disabled = show;
+        chatAttachBtn.disabled = show;
+        if (show) scrollChatToBottom();
+        else { chatInput.focus(); checkChatInputState(); }
+    }
+
+    function scrollChatToBottom() { chatBox.scrollTo({ top: chatBox.scrollHeight, behavior: 'smooth' }); }
+</script>
+</body>
+</html>
