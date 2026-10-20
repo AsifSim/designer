@@ -57,7 +57,7 @@ public class AngularBulkMigrationService {
                     sendEvent(emitter, "info", "'develop' branch not found locally. Branching from current default branch instead.");
                 }
 
-                String newBranchName = "feature/migrate-nrp-screens-" + uniqueId;
+                String newBranchName = "feature/migrate-foundry-screens-" + uniqueId;
                 sendEvent(emitter, "info", "Creating and switching to new branch: " + newBranchName);
                 git.checkout()
                         .setCreateBranch(true)
@@ -69,12 +69,12 @@ public class AngularBulkMigrationService {
                 String targetContext = contextService.buildMegaMigrationPrompt(oldProject, newProject);
 
                 // 3. Scan old project for components
-                sendEvent(emitter, "info", "Scanning legacy project for NRP screens and components...");
+                sendEvent(emitter, "info", "Scanning legacy project for screen components (excluding layouts/shared)...");
                 List<Path> legacyComponents = findLegacyComponents(oldProjectPath);
                 int total = legacyComponents.size();
 
                 if (total == 0) {
-                    sendEvent(emitter, "error", "No Angular components (*.component.ts) found in " + oldProject);
+                    sendEvent(emitter, "error", "No valid screen components found in " + oldProject);
                     emitter.complete();
                     return;
                 }
@@ -86,10 +86,14 @@ public class AngularBulkMigrationService {
 
                     sendEvent(emitter, "progress", String.format("{\"current\": %d, \"total\": %d, \"file\": \"%s\"}", i + 1, total, compName));
 
-                    String componentCode = readComponentBundle(compPath);
-                    String aiResponse = migrateComponentViaLLM(compName, componentCode, targetContext);
-
-                    saveGeneratedFiles(outputDir, compName, aiResponse);
+                    try {
+                        String componentCode = readComponentBundle(compPath);
+                        String aiResponse = migrateComponentViaLLM(compName, componentCode, targetContext);
+                        saveGeneratedFiles(outputDir, compName, aiResponse);
+                    } catch (Exception e) {
+                        logger.error("Failed to migrate component: " + compName, e);
+                        sendEvent(emitter, "info", "Skipped " + compName + " due to API error: " + e.getMessage());
+                    }
                 }
 
                 // 5. Stage the newly created JSON files
@@ -112,14 +116,18 @@ public class AngularBulkMigrationService {
                 "You are migrating the legacy component: " + componentName + ".\n" +
                 "Here is the legacy code bundle (TS, HTML, SCSS):\n" + componentCode + "\n\n" +
                 "MIGRATION COMMAND (CRITICAL):\n" +
-                "The TARGET PROJECT is a declarative JSON-driven UI framework. You MUST NOT generate Angular TS/HTML/SCSS files.\n" +
+                "The TARGET PROJECT is a strict declarative JSON-driven UI framework. You MUST NOT generate Angular TS/HTML/SCSS files.\n" +
                 "Analyze the legacy screen's layout, charts, API calls, and filters, and translate them entirely into the JSON configuration schema expected by the target project.\n\n" +
+                "STRICT SCHEMA RULES:\n" +
+                "1. You MUST ONLY use the exact widget types listed in the 'Available Components' section of the target project's README (e.g., bar-chart, table, global-filter, button).\n" +
+                "2. DO NOT invent or hallucinate unsupported widget types (such as 'image', 'text', 'menu', or 'app-card-list'). The framework will crash if it sees a type it does not recognize. Map unsupported legacy elements to the closest supported type or safely omit them.\n" +
+                "3. Structure your JSON EXACTLY like the 'Dashboard Configuration' example in the README. It must have a 'dashboard-name', 'filters', and a 'pageContent' array containing 'id', 'columns', 'widgetId', and 'type'.\n\n" +
                 "FILE PATH RESOLUTION:\n" +
-                "Consult the TARGET PROJECT README provided in your context. Find the section defining where 'Dashboard Configuration' files belong (e.g., foundry/foundry-app/public/assets/dashboard-config/).\n" +
+                "Consult the TARGET PROJECT README provided in your context. Find the section defining where 'Foundry screen configurations' or dashboard layout configs belong (e.g., foundry/foundry-app/public/assets/dashboard-config/).\n" +
                 "Extract that exact path and use it to format your output.\n\n" +
                 "OUTPUT FORMAT RULE:\n" +
                 "You MUST output the new JSON configuration file using the exact delimiter structure below so a script can parse it. Replace <PATH_FROM_README> with the directory you found in the documentation.\n" +
-                "@@file: <PATH_FROM_README>/" + componentName + "-config.json@@\n" +
+                "@@file: <PATH_FROM_README>/" + componentName + ".json@@\n" +
                 "{\n  \"dashboard-name\": \"Migrated Dashboard\",\n  \"pageContent\": [ ... ]\n}\n" +
                 "@@end@@";
 
@@ -151,11 +159,35 @@ public class AngularBulkMigrationService {
 
     private List<Path> findLegacyComponents(Path root) throws IOException {
         List<Path> components = new ArrayList<>();
-        Files.walkFileTree(root, new SimpleFileVisitor<>() {
+
+        // Target the source folder specifically to avoid root-level junk
+        Path screensRoot = root.resolve("src/app");
+        if (!Files.exists(screensRoot)) {
+            screensRoot = root; // Fallback to root if src/app doesn't exist
+        }
+
+        // Directories to strictly ignore to avoid utility widgets, dialogs, and layouts
+        List<String> excludedDirs = List.of(
+                "node_modules", "dist", "shared", "core", "layout", "layouts",
+                "common", "assets", "environments", "components", "widgets",
+                "dialogs", "popups", "header", "footer", "sidebar", "nav"
+        );
+
+        // Core shell components that should not be converted to JSON screens
+        List<String> excludedComponents = List.of(
+                "app.component.ts", "header.component.ts", "footer.component.ts",
+                "sidebar.component.ts", "body.component.ts", "page-not-found.component.ts",
+                "un-authorized-entry.component.ts", "status-dialogue.component.ts",
+                "status-panel.component.ts", "downloads-progress.component.ts",
+                "home.component.ts", "landing-page.component.ts", "manifest-download.component.ts",
+                "downloads-dialogue.component.ts", "entity-select.component.ts", "failed-validation-popup.component.ts"
+        );
+
+        Files.walkFileTree(screensRoot, new SimpleFileVisitor<>() {
             @Override
             public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) {
-                String name = dir.getFileName().toString();
-                if (name.equals("node_modules") || name.equals("dist") || name.startsWith(".")) {
+                String name = dir.getFileName().toString().toLowerCase();
+                if (name.startsWith(".") || excludedDirs.contains(name)) {
                     return FileVisitResult.SKIP_SUBTREE;
                 }
                 return FileVisitResult.CONTINUE;
@@ -163,8 +195,13 @@ public class AngularBulkMigrationService {
 
             @Override
             public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
-                if (file.toString().endsWith(".component.ts")) {
-                    components.add(file);
+                String fileName = file.getFileName().toString();
+
+                // Only grab components, and ensure they aren't on the exclusion list or named like a popup
+                if (fileName.endsWith(".component.ts") && !excludedComponents.contains(fileName)) {
+                    if (!fileName.contains("-dialog") && !fileName.contains("-modal") && !fileName.contains("-popup")) {
+                        components.add(file);
+                    }
                 }
                 return FileVisitResult.CONTINUE;
             }

@@ -2,6 +2,7 @@ package com.sim.spriced.pahal.controllers;
 
 import com.sim.spriced.pahal.dto.ChatResponseDto;
 import com.sim.spriced.pahal.services.PlatformGenerationService;
+import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
 import org.springframework.http.HttpHeaders;
@@ -10,6 +11,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.File;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
@@ -34,20 +36,53 @@ public class ArchitectureAgentController {
         return ResponseEntity.ok(response);
     }
 
-    @GetMapping("/download/{fileName}")
-    public ResponseEntity<Resource> downloadExcel(@PathVariable String fileName) {
-        try {
-            Path filePath = Paths.get(System.getProperty("user.dir"), "generated_excels", fileName).normalize();
-            Resource resource = new UrlResource(filePath.toUri());
+//    @GetMapping("/download/{fileName}")
+//    public ResponseEntity<Resource> downloadExcel(@PathVariable String fileName) {
+//        try {
+//            Path filePath = Paths.get(System.getProperty("user.dir"), "generated_excels", fileName).normalize();
+//            Resource resource = new UrlResource(filePath.toUri());
+//
+//            if (resource.exists() || resource.isReadable()) {
+//                return ResponseEntity.ok()
+//                        .contentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+//                        .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + fileName + "\"")
+//                        .body(resource);
+//            }
+//            return ResponseEntity.notFound().build();
+//        } catch (Exception e) {
+//            return ResponseEntity.internalServerError().build();
+//        }
+//    }
 
-            if (resource.exists() || resource.isReadable()) {
-                return ResponseEntity.ok()
-                        .contentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
-                        .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + fileName + "\"")
-                        .body(resource);
+    // CRITICAL FIX: The :.+ prevents Spring from stripping the .xlsx extension
+    @GetMapping("/download/{fileName:.+}")
+    public ResponseEntity<Resource> downloadExcel(@PathVariable("fileName") String fileName) {
+        try {
+            // Safely resolve the absolute file path
+            Path dirPath = Paths.get(System.getProperty("user.dir"), "generated_excels").toAbsolutePath().normalize();
+            Path filePath = dirPath.resolve(fileName).normalize();
+
+            // Security Check: Prevent directory traversal attacks
+            if (!filePath.startsWith(dirPath)) {
+                return ResponseEntity.status(403).build();
             }
-            return ResponseEntity.notFound().build();
+
+            File file = filePath.toFile();
+
+            if (!file.exists() || !file.canRead()) {
+                return ResponseEntity.notFound().build();
+            }
+
+            // CRITICAL FIX: Use FileSystemResource instead of UrlResource for safer local file reading
+            Resource resource = new FileSystemResource(file);
+
+            return ResponseEntity.ok()
+                    .contentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + file.getName() + "\"")
+                    .body(resource);
+
         } catch (Exception e) {
+            e.printStackTrace();
             return ResponseEntity.internalServerError().build();
         }
     }

@@ -49,12 +49,13 @@ public class AngularMigrationController {
     public SseEmitter startBulkMigration(
             @RequestParam("oldProject") String oldProject,
             @RequestParam("newProject") String newProject) {
-        
-        // 0 implies no timeout - the connection stays open until the migration finishes
-        SseEmitter emitter = new SseEmitter(0L); 
-        
+
+        // Use 0L or -1L to disable the timeout. This ensures the connection
+        // stays alive for the entire duration of the bulk migration loop.
+        SseEmitter emitter = new SseEmitter(0L);
+
         executor.execute(() -> bulkMigrationService.executeBulkMigration(oldProject, newProject, emitter));
-        
+
         return emitter;
     }
 }
